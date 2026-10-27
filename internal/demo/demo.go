@@ -3,7 +3,13 @@
 // connections.
 package demo
 
-import "github.com/madushakv/owrt-tui/internal/transport"
+import (
+	"fmt"
+	"math"
+	"sync"
+
+	"github.com/madushakv/owrt-tui/internal/transport"
+)
 
 const probe = `##board
 {"kernel":"6.12.74","hostname":"gw-demo","model":"Demo Router AX3000","board_name":"demo,ax3000","rootfs_type":"squashfs","release":{"distribution":"OpenWrt","version":"25.12.3","revision":"r32912-6639b15f62","target":"mediatek/filogic"}}
@@ -119,6 +125,7 @@ round-trip min/avg/max = 9.1/9.6/10.4 ms
 // Router returns a fake that answers the commands the program issues.
 func Router() *transport.Fake {
 	return (&transport.Fake{Name: "demo"}).
+		OnFunc("##owrt-metrics", metricsGen()).
 		On("ubus call system board", probe).
 		On("uci export", uciExport).
 		On("ubus call service list", services).
@@ -133,3 +140,101 @@ func Router() *transport.Fake {
 		On("traceroute", "traceroute to 1.1.1.1\n 1  192.168.1.254  0.9 ms\n 2  100.64.0.1  4.1 ms\n 3  1.1.1.1  9.6 ms\n").
 		On("nslookup", "Server:\t\t127.0.0.1\nName:\texample.com\nAddress: 93.184.216.34\n")
 }
+
+// metricsGen returns a generator whose counters advance on every call, so the
+// dashboard has believable moving graphs in demo mode. Two seconds of router
+// time pass per call.
+func metricsGen() func(cmd, stdin string) transport.Result {
+	var mu sync.Mutex
+	n := 0
+	cpuTotal, cpuIdle := 1e6, 8e5
+	wanRx, wanTx, lanRx, lanTx, wlRx, wlTx := 4e9, 6e8, 7e8, 3.9e9, 2e8, 9e8
+	return func(cmd, stdin string) transport.Result {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		t := float64(n)
+		busy := math.Max(0.02, 0.18+0.12*math.Sin(t/3)+0.08*math.Sin(t*1.7))
+		cpuTotal += 800
+		cpuIdle += 800 * (1 - busy)
+		wave := 0.55 + 0.45*math.Sin(t/4)
+		burst := 0.0
+		if n%17 < 4 {
+			burst = 1
+		}
+		down := 2 * (2.5e5 + 9e5*wave + 6e6*burst)
+		upl := 2 * (6e4 + 2e5*wave*0.6 + 3e5*burst)
+		wanRx += down
+		wanTx += upl
+		lanTx += down * 0.98
+		lanRx += upl * 0.97
+		wlTx += 2 * (1.2e5 + 4e5*wave)
+		wlRx += 2 * (3e4 + 1e5*wave)
+		return transport.Result{Stdout: fmt.Sprintf(metricsTemplate,
+			93600+2*t,
+			uint64((cpuTotal-cpuIdle)*0.8), 0, uint64((cpuTotal-cpuIdle)*0.2), uint64(cpuIdle),
+			131072+int(9000*math.Sin(t/9)),
+			51000+int(2500*math.Sin(t/11)),
+			uint64(wanRx), uint64(wanTx), uint64(lanRx), uint64(lanTx), uint64(wlRx), uint64(wlTx),
+			280+int(30*math.Sin(t/5)),
+			1790000000+int(2*t),
+		)}
+	}
+}
+
+// metricsTemplate is the metrics script output of a small dual-band router.
+// Verbs, in order: uptime, cpu user/nice/system/idle, MemAvailable, temp
+// (millidegrees), wan rx/tx, br-lan rx/tx, wlan0 rx/tx, conntrack count,
+// epoch seconds.
+const metricsTemplate = `##owrt-metrics
+##load
+0.31 0.28 0.25 1/95 4242
+##uptime
+%.2f 280000.00
+##cores
+2
+##stat
+cpu  %d %d %d %d 0 0 0 0 0 0
+##mem
+MemTotal:         262144 kB
+MemFree:           61000 kB
+MemAvailable:     %d kB
+Buffers:            9000 kB
+Cached:            52000 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+##temp
+%d
+##net
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:  111 1 0 0 0 0 0 0  111 1 0 0 0 0 0 0
+  eth1: %d 1 0 0 0 0 0 0  %d 1 0 0 0 0 0 0
+br-lan: %d 1 0 0 0 0 0 0  %d 1 0 0 0 0 0 0
+ wlan0: %d 1 0 0 0 0 0 0  %d 1 0 0 0 0 0 0
+##ct
+%d
+16384
+##ubus
+{"interface":[
+ {"interface":"loopback","up":true,"proto":"static","device":"lo"},
+ {"interface":"lan","up":true,"proto":"static","uptime":93000,"l3_device":"br-lan","ipv4-address":[{"address":"192.168.1.1","mask":24}]},
+ {"interface":"wan","up":true,"proto":"dhcp","uptime":92000,"l3_device":"eth1","ipv4-address":[{"address":"203.0.113.77","mask":24}],"route":[{"target":"0.0.0.0","mask":0,"nexthop":"203.0.113.1"}],"dns-server":["1.1.1.1","9.9.9.9"]}
+]}
+##time
+%d
+##leases
+1790090000 aa:bb:cc:00:00:01 192.168.1.50 macbook-pro 01:aa
+1790090000 aa:bb:cc:00:00:02 192.168.1.51 pixel-8 01:bb
+1790090000 aa:bb:cc:00:00:03 192.168.1.52 living-room-tv 01:cc
+0 aa:bb:cc:00:00:04 192.168.1.60 printer *
+1790090000 aa:bb:cc:00:00:05 192.168.1.61 * 01:dd
+##wifi
+dev wlan0
+wlan0     ESSID: "demo-net"
+AA:BB:CC:00:00:01  -48 dBm / -95 dBm (SNR 47)  80 ms ago
+	RX: 144.4 MBit/s, MCS 15
+AA:BB:CC:00:00:02  -63 dBm / -95 dBm (SNR 32)  120 ms ago
+AA:BB:CC:00:00:03  -74 dBm / -95 dBm (SNR 21)  300 ms ago
+##end
+`

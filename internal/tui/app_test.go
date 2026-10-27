@@ -34,7 +34,7 @@ func pump(t *testing.T, a *App, cmd tea.Cmd) {
 		}
 		_, next := a.Update(msg)
 		pump(t, a, next)
-	case <-time.After(300 * time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 

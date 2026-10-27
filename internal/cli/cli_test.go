@@ -133,3 +133,19 @@ func TestUsageErrors(t *testing.T) {
 		t.Errorf("no target: %d %q", code, e.String())
 	}
 }
+
+func TestSample(t *testing.T) {
+	code, out, errs := run(t, "sample")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+	for _, want := range []string{"Load", "Memory", "Interfaces", "wan(up)", "Wi-Fi clients"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("sample output missing %q:\n%s", want, out)
+		}
+	}
+	code, raw, _ := run(t, "sample", "-raw")
+	if code != 0 || !strings.Contains(raw, "##owrt-metrics") || !strings.Contains(raw, "##end") {
+		t.Fatalf("-raw should print the unparsed router output:\n%s", raw)
+	}
+}
