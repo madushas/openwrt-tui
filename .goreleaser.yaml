@@ -1,0 +1,27 @@
+version: 2
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: "Features"
+      regexp: '^feat[(\w\s)]*:'
+      order: 0
+    - title: "Bug Fixes"
+      regexp: '^fix[(\w\s)]*:'
+      order: 1
+    - title: "Chores & Maintenance"
+      regexp: '^(chore|ci|build)[(\w\s)]*:'
+      order: 2
+    - title: "Documentation"
+      regexp: '^docs[(\w\s)]*:'
+      order: 3
+    - title: "Refactoring & Performance"
+      regexp: '^(refactor|perf)[(\w\s)]*:'
+      order: 4
+    - title: "Other Changes"
+      order: 999
+  filters:
+    exclude:
+      - "^merge branch"
+      - "^merge pull request"
