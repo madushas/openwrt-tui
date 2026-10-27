@@ -1,0 +1,114 @@
+# owrt-tui
+
+A terminal UI for managing OpenWrt routers over SSH. Agentless: nothing is
+installed on the router. Targets OpenWrt 25.12 (apk) with an opkg backend for
+24.10 and older.
+
+## Status: Phase M (MVP)
+
+| Piece | State |
+|---|---|
+| SSH transport (system `ssh`, ControlMaster) | verified on a real router (OpenWrt 25.12.2, apk, fw4): `probe`, `services`, `logs`, `uci`, `pkg installed` work. Intermittent exit 255 with no message on back-to-back runs: fixed (`Close` now waits for the shared connection to exit; the read-only CLI retries once). **Re-test needed.** |
+| Capability probe (release, apk/opkg, fw3/fw4, space, tools, EOL advisories) | done, tested |
+| UCI export parser, staged change set, diff, lockout guard | done, tested |
+| Apply with rollback watchdog, confirm, restore | done, script tested with a fake router; **not yet run on a real device** |
+| Package manager: apk + opkg, search ranking, mandatory `--simulate` | done, tested |
+| Init script manager (list, state, start/stop/restart/enable/disable) | done, tested |
+| Log reader and filter, follow mode | done, tested (follow streaming needs real ssh) |
+| Diagnostics: ping, traceroute, nslookup | done, tested |
+| Secret masking (`private_key`, `psk`, passwords, ...) | done, tested |
+| Read-only mode, enforced in `internal/session` | done, mutation-tested |
+| Reboot / power off (detached so ssh exits cleanly) | done, tested |
+| TUI (Bubble Tea v2): Overview, Config explorer with staged edits, Changes (diff, risk, apply with rollback and confirm), Services, Logs (filter, follow), Packages (search, info, mandatory dry run, install/remove), Diagnostics | done; tested with the demo router (rendering, secret masking, read-only guard, confirm-before-send). |
+
+## Terminal UI
+
+```
+./owrt-tui -demo                         # try it with no router
+./owrt-tui -target root@192.168.1.1      # read-only
+./owrt-tui -target root@192.168.1.1 -write   # allow staging and applying changes
+```
+
+With no `-target`, the UI opens a Connect screen. It lists your last used router,
+your default gateway (labelled as a guess), and the Hosts in `~/.ssh/config`.
+**Nothing is contacted until you press enter.** If the connection fails, it says why
+and what to do:
+
+| Failure | What happens |
+|---|---|
+| Unknown host key | shows the fingerprint; on `y` it saves exactly that key to known_hosts, then connects |
+| Host key changed | explains and stops; no way through (remove the old entry yourself with `ssh-keygen -R`) |
+| Key not accepted | key wizard: pick or create an ed25519 key and install it on the router. `ssh` and `ssh-keygen` run in your terminal, so passwords and passphrases never reach this program |
+| Refused / timeout / unreachable | explains the likely causes; retry or try another address |
+| Answers but is not OpenWrt | says so (the gateway is often a modem or switch) |
+
+After a successful connection through the gateway or a typed address it offers to add a
+`Host` entry to `~/.ssh/config` (append-only, asks first). The last used targets are kept in
+your user config dir (`owrt-tui/recent`).
+
+Keys: tab or 1-7 switch screens, ? help, q quit. Each screen lists its keys in the footer.
+
+## Try it on your router (read-only)
+
+The command-line front end always connects read-only, so a first run cannot
+change anything. It uses your system `ssh`, so your `~/.ssh/config`, agent and
+ProxyJump all apply. It never prompts, so use a key or agent (BatchMode).
+
+```
+./owrt-tui -demo probe                        # no router needed
+./owrt-tui -target root@192.168.1.1 probe     # what the router is and can do
+./owrt-tui -target root@192.168.1.1 services
+./owrt-tui -target root@192.168.1.1 uci       # secrets masked; add -reveal to show
+./owrt-tui -target root@192.168.1.1 logs -level warn -n 200
+./owrt-tui -target root@192.168.1.1 logs -f   # Ctrl-C to stop
+./owrt-tui -target root@192.168.1.1 pkg plan-add wireguard-tools   # dry run only
+./owrt-tui -target root@192.168.1.1 ping 1.1.1.1
+```
+
+Unix only for now (ssh ControlMaster sockets): Linux, macOS, WSL.
+
+Worth reporting back: any command that errors, `probe` showing the wrong
+package manager or firewall, an empty `services` or `pkg installed` list, and
+whether `logs -f` stops cleanly on Ctrl-C (a stray `logread -f` left running on
+the router would be a bug).
+
+## Layout
+
+```
+internal/transport   Run / Stream over ssh, local shell, or a scripted Fake
+internal/shq         shell quoting and identifier validation (every remote
+                     command interpolates only validated or quoted values)
+internal/device      capability probe
+internal/uci         `uci export` parser, secret masking
+internal/changes     staged changes, diff, guard, apply/rollback scripts
+internal/pkgmgr      apk and opkg backends
+internal/services    init scripts
+internal/logs        logread parsing, filtering, follow
+internal/diag        ping, traceroute, nslookup
+internal/session     the facade the UI calls; owns the read-only switch
+```
+
+The UI should only ever call `internal/session`. Every method that changes the
+router checks read-only mode there, and a test asserts that read-only mode sends
+no commands at all.
+
+## Develop
+
+```
+
+make build      # build the binary
+# or
+make check      # vet, race-enabled tests, gofmt
+```
+
+Tests use `transport.Fake`, so no router is needed.
+
+## Next
+
+1. Use the TUI on the real router; report layout problems, wrong keys and anything confusing.
+2. Run the apply/rollback script against a real or QEMU OpenWrt device before
+   trusting it. Check especially that the watchdog survives the SSH session
+   dropping, and that `reload_config` is enough to apply network changes.
+3. Try the key wizard against a real router (it needs a root password set and password SSH enabled). It has only been tested with scripted ssh tools.
+4. Improve firewall detection (fw3 and fw4 binaries can both be present).
+5. Later phases from the plan: Host analyzer, WireGuard analyzer, scheduled tasks.

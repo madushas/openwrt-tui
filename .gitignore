@@ -1,0 +1,24 @@
+# Build output directory
+/bin/
+
+# Test binaries and coverage
+*.test
+*.out
+*.coverprofile
+profile.cov
+
+# Workspace and Environment
+go.work
+go.work.sum
+.env
+
+# Dependencies (No longer using vendor/)
+vendor/
+
+# IDEs and OS metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
