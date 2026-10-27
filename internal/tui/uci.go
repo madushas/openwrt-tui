@@ -312,3 +312,72 @@ func stripPad(s string) string {
 	}
 	return b.String()
 }
+
+// Commands lets the palette jump straight to a config file.
+func (u *uciScreen) Commands() []paletteItem {
+	var out []paletteItem
+	for i, c := range u.cfgs {
+		i := i
+		out = append(out, paletteItem{Title: "Open config: " + c.Name, Hint: "/etc/config/" + c.Name, Run: func() tea.Cmd {
+			u.level, u.cur[0], u.cur[1], u.cur[2] = 1, i, 0, 0
+			return nil
+		}})
+	}
+	return out
+}
+
+// Detail explains the selected row.
+func (u *uciScreen) Detail(w, h int) string {
+	if len(u.cfgs) == 0 {
+		return ""
+	}
+	cfg := u.cfgs[u.cur[0]]
+	var b strings.Builder
+	switch u.level {
+	case 0:
+		b.WriteString(" " + sBold.Render(cfg.Name) + "\n\n")
+		b.WriteString(" " + sDim.Render("File     ") + "/etc/config/" + cfg.Name + "\n")
+		b.WriteString(" " + sDim.Render("Sections ") + fmt.Sprint(len(cfg.Sections)) + "\n")
+		if n := u.pendingIn(cfg.Name); n > 0 {
+			b.WriteString(" " + sWarn.Render(fmt.Sprintf("%d staged change(s)", n)) + "\n")
+		}
+		b.WriteString("\n " + sDim.Render("enter to open") + "\n")
+	case 1:
+		if u.cur[1] >= len(cfg.Sections) {
+			return ""
+		}
+		sec := cfg.Sections[u.cur[1]]
+		b.WriteString(" " + sBold.Render(sec.Ref()) + "\n\n")
+		b.WriteString(" " + sDim.Render("Type    ") + sec.Type + "\n")
+		b.WriteString(" " + sDim.Render("Options ") + fmt.Sprint(len(sec.Options)) + "\n")
+		b.WriteString(" " + sDim.Render("Edit    ") + "uci show " + cfg.Name + "." + sec.Ref() + "\n")
+	case 2:
+		opts := u.options()
+		if u.cur[2] >= len(opts) {
+			return ""
+		}
+		o := opts[u.cur[2]]
+		sec := cfg.Sections[u.cur[1]]
+		kind := "option"
+		if o.IsList {
+			kind = "list"
+		}
+		b.WriteString(" " + sBold.Render(o.Key) + sDim.Render("  ("+kind+")") + "\n\n")
+		for _, l := range wrap(o.Display(u.reveal), w-2) {
+			b.WriteString(" " + l + "\n")
+		}
+		if o.IsList {
+			for _, v := range maskList(o, u.reveal) {
+				b.WriteString("  • " + v + "\n")
+			}
+		}
+		if c, ok := u.e.Staged.Pending(cfg.Name, sec.Ref(), o.Key); ok {
+			b.WriteString("\n " + sWarn.Render("staged: "+describe(c)) + "\n")
+		}
+		if uci.IsSecret(o.Key) {
+			b.WriteString("\n " + sDim.Render("secret: masked; v reveals") + "\n")
+		}
+		b.WriteString("\n " + sDim.Render("uci get "+cfg.Name+"."+sec.Ref()+"."+o.Key) + "\n")
+	}
+	return b.String()
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/madushakv/owrt-tui/internal/demo"
 	"github.com/madushakv/owrt-tui/internal/diag"
 	"github.com/madushakv/owrt-tui/internal/logs"
+	"github.com/madushakv/owrt-tui/internal/metrics"
 	"github.com/madushakv/owrt-tui/internal/session"
 	"github.com/madushakv/owrt-tui/internal/transport"
 )
@@ -76,6 +77,7 @@ func init() {
 		{"services", "", "list init scripts with enabled and running state", cmdServices},
 		{"logs", "[-n 100] [-level warn] [-proc name] [-grep text] [-f]", "show the system log", cmdLogs},
 		{"pkg", "installed|upgradable|search <q>|info <pkg>|plan-add <pkg>|plan-del <pkg>", "package manager (read-only; plans are dry runs)", cmdPkg},
+		{"sample", "[-raw]", "one live reading (what the dashboard shows); -raw prints the router's unparsed output", cmdSample},
 		{"ping", "[-c 4] <host>", "ping from the router", cmdPing},
 		{"trace", "<host>", "traceroute from the router", cmdTrace},
 		{"lookup", "<name> [dns-server]", "DNS lookup from the router", cmdLookup},
@@ -477,4 +479,59 @@ func uptime(secs int) string {
 		return fmt.Sprintf("%dh %dm", h, m)
 	}
 	return fmt.Sprintf("%dm", m)
+}
+
+// cmdSample prints one live reading. With -raw it prints exactly what the
+// router returned, which is what to send along when a dashboard panel is empty
+// or wrong on a particular device.
+func cmdSample(e env, args []string) error {
+	fs := flag.NewFlagSet("sample", flag.ContinueOnError)
+	raw := fs.Bool("raw", false, "print the router's unparsed output")
+	if err := fs.Parse(args); err != nil {
+		return usageError(err.Error())
+	}
+	ctx, cancel := e.timed()
+	defer cancel()
+	if *raw {
+		res, err := transport.RunScript(ctx, e.s.T, metrics.Script)
+		if err != nil {
+			return err
+		}
+		fmt.Fprint(e.out, res.Stdout)
+		if res.Stderr != "" {
+			fmt.Fprintln(e.out, "\n[stderr]\n"+res.Stderr)
+		}
+		return nil
+	}
+	s, err := e.s.Sample(ctx)
+	if err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(e.out, 0, 0, 2, ' ', 0)
+	row := func(k, v string) { fmt.Fprintf(tw, "%s\t%s\n", k, v) }
+	row("Load", fmt.Sprintf("%.2f %.2f %.2f (%d cores)", s.Load[0], s.Load[1], s.Load[2], s.Cores))
+	row("Memory", fmt.Sprintf("%.1f MiB available of %.1f MiB", float64(s.MemAvail)/1024, float64(s.MemTotal)/1024))
+	if s.HasTemp {
+		row("Temperature", fmt.Sprintf("%.0f C", s.TempC))
+	} else {
+		row("Temperature", "-  (no sensor found)")
+	}
+	row("Conntrack", fmt.Sprintf("%d of %d", s.CtCount, s.CtMax))
+	var names []string
+	for _, n := range s.Net {
+		names = append(names, n.Name)
+	}
+	row("Net devices", strings.Join(names, " "))
+	var ifs []string
+	for _, i := range s.Ifaces {
+		state := "down"
+		if i.Up {
+			state = "up"
+		}
+		ifs = append(ifs, i.Name+"("+state+")")
+	}
+	row("Interfaces", strings.Join(ifs, " "))
+	row("DHCP leases", fmt.Sprint(len(s.Leases)))
+	row("Wi-Fi clients", fmt.Sprint(len(s.Stations)))
+	return tw.Flush()
 }

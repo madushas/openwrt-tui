@@ -12,6 +12,7 @@ import (
 
 	"github.com/madushakv/owrt-tui/internal/changes"
 	"github.com/madushakv/owrt-tui/internal/device"
+	"github.com/madushakv/owrt-tui/internal/metrics"
 	"github.com/madushakv/owrt-tui/internal/pkgmgr"
 	"github.com/madushakv/owrt-tui/internal/services"
 	"github.com/madushakv/owrt-tui/internal/transport"
@@ -137,6 +138,21 @@ func (s *Session) Restore(ctx context.Context, planID string) error {
 		return err
 	}
 	return s.runOK(ctx, cmd)
+}
+
+// ---- live statistics ----
+
+// Sample reads live statistics in one round trip. It only reads, so it is
+// allowed in read-only mode.
+func (s *Session) Sample(ctx context.Context) (metrics.Sample, error) {
+	res, err := transport.RunScript(ctx, s.T, metrics.Script)
+	if err != nil {
+		return metrics.Sample{}, err
+	}
+	if res.ExitCode != 0 && strings.TrimSpace(res.Stdout) == "" {
+		return metrics.Sample{}, fmt.Errorf("sampling failed (exit %d): %s", res.ExitCode, strings.TrimSpace(res.Stderr))
+	}
+	return metrics.Parse(res.Stdout)
 }
 
 // ---- services ----

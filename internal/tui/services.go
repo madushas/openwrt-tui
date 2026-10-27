@@ -86,25 +86,78 @@ func (s *servicesScreen) key(k string) (screen, tea.Cmd) {
 		if !ok || len(s.list) == 0 {
 			return s, nil
 		}
-		if s.e.S.ReadOnly {
-			return s, toast("read-only mode: start with -write to change services")
-		}
-		name := s.list[s.cur].Name
-		prompt := fmt.Sprintf("%s %s?", capitalize(string(act)), name)
-		warn := services.Warning(name, act)
-		if warn != "" {
-			prompt += " Warning: " + warn + "."
-		}
-		return s, func() tea.Msg {
-			return askMsg{Prompt: prompt, Danger: warn != "", Yes: func() tea.Cmd {
-				return s.e.call(func(ctx context.Context) tea.Msg {
-					out, err := s.e.S.ServiceDo(ctx, name, act)
-					return serviceDoneMsg{name, act, out, err}
-				})
-			}}
-		}
+		return s, s.request(s.list[s.cur].Name, act)
 	}
 	return s, nil
+}
+
+// request asks for confirmation, then runs the action. In read-only mode it
+// only explains why nothing happens.
+func (s *servicesScreen) request(name string, act services.Action) tea.Cmd {
+	if s.e.S.ReadOnly {
+		return toast("read-only mode: start with -write to change services")
+	}
+	prompt := fmt.Sprintf("%s %s?", capitalize(string(act)), name)
+	warn := services.Warning(name, act)
+	if warn != "" {
+		prompt += " Warning: " + warn + "."
+	}
+	return func() tea.Msg {
+		return askMsg{Prompt: prompt, Danger: warn != "", Yes: func() tea.Cmd {
+			return s.e.call(func(ctx context.Context) tea.Msg {
+				out, err := s.e.S.ServiceDo(ctx, name, act)
+				return serviceDoneMsg{name, act, out, err}
+			})
+		}}
+	}
+}
+
+// Commands adds one palette entry per service and action.
+func (s *servicesScreen) Commands() []paletteItem {
+	var out []paletteItem
+	for _, sv := range s.list {
+		sv := sv
+		for _, act := range []services.Action{services.Restart, services.Start, services.Stop, services.Enable, services.Disable} {
+			act := act
+			out = append(out, paletteItem{Title: capitalize(string(act)) + " " + sv.Name, Hint: "service", Run: func() tea.Cmd { return s.request(sv.Name, act) }})
+		}
+	}
+	return out
+}
+
+// Detail describes the selected service.
+func (s *servicesScreen) Detail(w, h int) string {
+	if s.cur < 0 || s.cur >= len(s.list) {
+		return ""
+	}
+	sv := s.list[s.cur]
+	var b strings.Builder
+	b.WriteString(" " + sBold.Render(sv.Name) + "\n\n")
+	switch sv.State {
+	case services.Running:
+		b.WriteString(" " + chipGood.Render("RUNNING") + "\n")
+	case services.Stopped:
+		b.WriteString(" " + chipWarn.Render("STOPPED") + "\n")
+	default:
+		b.WriteString(" " + chipDim.Render("NO INSTANCE") + "\n")
+	}
+	boot := "disabled: will not start at boot"
+	if sv.Enabled {
+		boot = "enabled: starts at boot"
+	}
+	b.WriteString("\n " + sDim.Render("Boot   ") + boot + "\n")
+	if sv.Start > 0 {
+		b.WriteString(" " + sDim.Render("Order  ") + fmt.Sprintf("START=%d (lower starts first)", sv.Start) + "\n")
+	}
+	b.WriteString(" " + sDim.Render("Script ") + "/etc/init.d/" + sv.Name + "\n\n")
+	b.WriteString(" " + sDim.Render("Same as: ") + "service " + sv.Name + " restart\n")
+	if w := services.Warning(sv.Name, services.Restart); w != "" {
+		b.WriteString("\n")
+		for _, l := range wrap(w, 34) {
+			b.WriteString(" " + sWarn.Render("! "+l) + "\n")
+		}
+	}
+	return b.String()
 }
 
 func (s *servicesScreen) View(w, h int) string {

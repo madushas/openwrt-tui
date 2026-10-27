@@ -227,3 +227,27 @@ func TestNoPackageManager(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestSampleWorksInReadOnlyMode(t *testing.T) {
+	f := (&transport.Fake{Name: "x"}).
+		On("##board", "##board\n{\"hostname\":\"x\"}\n##uname\naarch64\n##tools\nuci\nubus\n").
+		On("##owrt-metrics", "##owrt-metrics\n##uptime\n123.0 5.0\n##cores\n2\n")
+	s, err := Connect(context.Background(), f, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.Sample(context.Background())
+	if err != nil || m.At != 123 || m.Cores != 2 {
+		t.Fatalf("got %+v, %v", m, err)
+	}
+}
+
+func TestSampleReportsFailure(t *testing.T) {
+	f := (&transport.Fake{Name: "x"}).
+		On("##board", "##board\n{\"hostname\":\"x\"}\n##uname\naarch64\n##tools\nuci\nubus\n").
+		OnResult("##owrt-metrics", transport.Result{ExitCode: 1, Stderr: "boom"})
+	s, _ := Connect(context.Background(), f, true)
+	if _, err := s.Sample(context.Background()); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("got %v", err)
+	}
+}

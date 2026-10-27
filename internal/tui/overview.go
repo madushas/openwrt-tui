@@ -20,8 +20,6 @@ func (o *overview) Init() tea.Cmd   { return nil }
 func (o *overview) Capturing() bool { return false }
 func (o *overview) Keys() string    { return "R reboot" }
 
-type rebootDoneMsg struct{ err error }
-
 func (o *overview) Update(msg tea.Msg) (screen, tea.Cmd) {
 	switch m := msg.(type) {
 	case rebootDoneMsg:
@@ -44,16 +42,6 @@ func (o *overview) Update(msg tea.Msg) (screen, tea.Cmd) {
 	return o, nil
 }
 
-func kib(k int64) string {
-	switch {
-	case k >= 1024*1024:
-		return fmt.Sprintf("%.1f GiB", float64(k)/1024/1024)
-	case k >= 1024:
-		return fmt.Sprintf("%.1f MiB", float64(k)/1024)
-	}
-	return fmt.Sprintf("%d KiB", k)
-}
-
 func space(label string, s device.Space) string {
 	if s.Total == 0 {
 		return ""
@@ -64,14 +52,6 @@ func space(label string, s device.Space) string {
 		return sWarn.Render(line + "  low")
 	}
 	return line
-}
-
-func uptime(secs int) string {
-	d, h, m := secs/86400, secs/3600%24, secs/60%60
-	if d > 0 {
-		return fmt.Sprintf("%dd %dh %dm", d, h, m)
-	}
-	return fmt.Sprintf("%dh %dm", h, m)
 }
 
 func (o *overview) View(w, h int) string {

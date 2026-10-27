@@ -99,7 +99,9 @@ func newHarness(t *testing.T, o ConnectOpts) *harness {
 // run feeds cmd's messages back into the root. ExecProcess commands (which
 // need a real terminal) are not run; the tests inject their results.
 func (h *harness) run(cmd tea.Cmd) {
-	if cmd == nil {
+	// Once the main app exists it polls the router forever; the connect tests
+	// only need to know that it started.
+	if cmd == nil || h.root.app != nil {
 		return
 	}
 	done := make(chan tea.Msg, 1)

@@ -48,6 +48,19 @@ your user config dir (`owrt-tui/recent`).
 
 Keys: tab or 1-7 switch screens, ? help, q quit. Each screen lists its keys in the footer.
 
+## Dashboard and navigation
+
+The home screen is a live dashboard (refreshes every 2 s while visible; it pauses on other screens):
+system facts, CPU (total and per core) with history, memory, flash, connection tracking, temperature,
+interfaces with state and addresses, a throughput graph for the WAN (or any interface, `i` to cycle),
+per-device rates, and connected clients with Wi-Fi signal bars. `p` pauses, `+`/`-` change the refresh
+speed, `u` switches bits/bytes. It only reads: one batched command per refresh.
+
+Around it: a menu on the left, a detail pane on wide terminals (services, config values with secrets
+masked), mouse support (click the menu, scroll with the wheel), a command palette (`:` or Ctrl+P, fuzzy
+search for any screen or action, such as "restart dnsmasq"), a help overlay (`?`) and three colour themes
+(dark, light, colour-blind safe; switch from the palette, the choice is remembered).
+
 ## Try it on your router (read-only)
 
 The command-line front end always connects read-only, so a first run cannot
