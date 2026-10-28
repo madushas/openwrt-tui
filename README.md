@@ -108,9 +108,6 @@ no commands at all.
 ## Develop
 
 ```
-
-make build      # build the binary
-# or
 make check      # vet, race-enabled tests, gofmt
 ```
 

@@ -3,6 +3,8 @@ package changes
 import (
 	"fmt"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,7 +65,7 @@ func (s *Set) Script(p Plan) (string, error) {
 	b.WriteString("SNAP=" + shq.Quote(d) + "\n")
 	b.WriteString("mkdir -p \"$SNAP\" || exit 3\n")
 	b.WriteString("cp -a /etc/config/. \"$SNAP\"/ || exit 3\n")
-	for _, c := range s.items {
+	for _, c := range s.ordered() {
 		if err := c.Validate(); err != nil {
 			return "", err
 		}
@@ -85,6 +87,42 @@ func (s *Set) Script(p Plan) (string, error) {
 	b.WriteString("reload_config\n")
 	b.WriteString("echo owrt-tui: applied\n")
 	return b.String(), nil
+}
+
+var anonRef = regexp.MustCompile(`^@([A-Za-z0-9_]+)\[(-?\d+)\]$`)
+
+// ordered returns the changes in the order they must run on the router.
+//
+// Sections that have no name are addressed by position, "@host[2]". Deleting
+// one renumbers the ones after it, so a delete that ran early would make every
+// later "@host[n]" in the same batch point at the wrong section. Edits and
+// additions therefore run first, in the order they were staged, and whole
+// section deletes run last, highest position first, so each delete leaves the
+// positions of the remaining ones unchanged.
+func (s *Set) ordered() []Change {
+	var first, deletes []Change
+	for _, c := range s.items {
+		if c.Op == OpDelete && c.Option == "" {
+			deletes = append(deletes, c)
+		} else {
+			first = append(first, c)
+		}
+	}
+	pos := func(c Change) int {
+		if m := anonRef.FindStringSubmatch(c.Section); m != nil {
+			n, _ := strconv.Atoi(m[2])
+			return n
+		}
+		return -1
+	}
+	sort.SliceStable(deletes, func(i, j int) bool {
+		a, b := deletes[i], deletes[j]
+		if a.Config != b.Config {
+			return a.Config < b.Config
+		}
+		return pos(a) > pos(b)
+	})
+	return append(first, deletes...)
 }
 
 // ConfirmCommand returns the command that cancels a pending rollback.

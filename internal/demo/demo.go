@@ -229,6 +229,11 @@ br-lan: %d 1 0 0 0 0 0 0  %d 1 0 0 0 0 0 0
 1790090000 aa:bb:cc:00:00:03 192.168.1.52 living-room-tv 01:cc
 0 aa:bb:cc:00:00:04 192.168.1.60 printer *
 1790090000 aa:bb:cc:00:00:05 192.168.1.61 * 01:dd
+##neigh
+192.168.1.50 dev br-lan lladdr aa:bb:cc:00:00:01 REACHABLE
+192.168.1.51 dev br-lan lladdr aa:bb:cc:00:00:02 REACHABLE
+192.168.1.52 dev br-lan lladdr aa:bb:cc:00:00:03 STALE
+192.168.1.60 dev br-lan lladdr aa:bb:cc:00:00:04 REACHABLE
 ##wifi
 dev wlan0
 wlan0     ESSID: "demo-net"

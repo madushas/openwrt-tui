@@ -13,7 +13,7 @@ func runLocal(ctx context.Context, cmd string, stdin io.Reader) (Result, error) 
 	var out, errb bytes.Buffer
 	c.Stdout, c.Stderr, c.Stdin = &out, &errb, stdin
 	err := c.Run()
-	res := Result{Stdout: out.String(), Stderr: errb.String()}
+	res := Result{Stdout: out.String(), Stderr: errb.String()}.clean()
 	if err == nil {
 		return res, nil
 	}

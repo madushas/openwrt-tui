@@ -84,9 +84,9 @@ func (f *Fake) Run(ctx context.Context, cmd string, stdin io.Reader) (Result, er
 	for _, h := range f.handlers {
 		if strings.Contains(hay, h.match) {
 			if h.fn != nil {
-				return h.fn(cmd, in), nil
+				return h.fn(cmd, in).clean(), nil
 			}
-			return h.res, nil
+			return h.res.clean(), nil
 		}
 	}
 	return Result{Stderr: "fake: no handler for: " + cmd, ExitCode: 127}, nil

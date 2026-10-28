@@ -158,7 +158,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
-func (a *App) full() bool { return a.w >= 80 && a.h >= 14 }
+// full is the layout with the Menu sidebar; narrower terminals get a tab bar so
+// the screen itself keeps the width.
+func (a *App) full() bool { return a.w >= 100 && a.h >= 14 }
 
 func (a *App) click(m tea.Mouse) (tea.Model, tea.Cmd) {
 	if m.Button != tea.MouseLeft || a.ask != nil || a.pal != nil {
