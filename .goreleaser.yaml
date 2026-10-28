@@ -1,5 +1,8 @@
 version: 2
 
+builds:
+  - main: ./cmd/owrt-tui
+
 changelog:
   sort: asc
   use: github
