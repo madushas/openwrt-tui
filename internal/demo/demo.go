@@ -80,6 +80,12 @@ config dhcp 'lan'
 	option interface 'lan'
 	option start '100'
 	option limit '150'
+	option leasetime '12h'
+
+config host
+	option name 'printer'
+	option mac 'aa:bb:cc:00:00:04'
+	option ip '192.168.1.60'
 `
 
 const services = `svc dnsmasq 1 19

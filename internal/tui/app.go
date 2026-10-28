@@ -75,6 +75,7 @@ func New(ctx context.Context, s *session.Session, timeout time.Duration) *App {
 	a.theme = applyTheme(loadThemeFn()).Name
 	a.screens = []screen{
 		newDashboard(e),
+		newDHCP(e),
 		newUCI(e),
 		newChanges(e),
 		newServices(e),

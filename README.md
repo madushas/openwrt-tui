@@ -122,3 +122,11 @@ Tests use `transport.Fake`, so no router is needed.
 3. Try the key wizard against a real router (it needs a root password set and password SSH enabled). It has only been tested with scripted ssh tools.
 4. Improve firewall detection (fw3 and fw4 binaries can both be present).
 5. Later phases from the plan: Host analyzer, WireGuard analyzer, scheduled tasks.
+
+## DHCP and static leases (phase 3a)
+
+The **DHCP** screen lists address pools, static leases and live leases that have no reservation yet.
+`s` turns a live lease into a static lease (name, MAC and IP prefilled; hostnames from the router are
+sanitised), `n` adds one by hand, `enter` edits a pool or reservation, `d` deletes a reservation.
+Everything is validated as you type, duplicates of an existing MAC or IP are refused, and the result is
+only *staged*: review and apply it on the Changes screen. Read-only mode blocks the forms entirely.

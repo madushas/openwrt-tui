@@ -166,7 +166,7 @@ func TestHostileRouterTextCannotReachTheTerminal(t *testing.T) {
 	if v := a.render(); strings.Contains(plain2(v), "\x1b]") || strings.Contains(v, "pwned\x07") || strings.Contains(v, "\x07") {
 		t.Fatalf("hostile DHCP name reached the screen")
 	}
-	press(t, a, "5") // logs
+	press(t, a, "6") // logs
 	if v := a.render(); strings.Contains(v, "\x07") || strings.Contains(v, "[2Jb") && strings.Contains(v, "\x1b[2Jb") {
 		t.Fatalf("hostile log line reached the screen")
 	}
