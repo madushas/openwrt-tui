@@ -62,6 +62,12 @@ config wireguard_wg0
 
 package wireless
 
+config wifi-device 'radio0'
+	option type 'mac80211'
+	option band '2g'
+	option channel '1'
+	option htmode 'HT20'
+
 config wifi-iface 'default_radio0'
 	option device 'radio0'
 	option mode 'ap'

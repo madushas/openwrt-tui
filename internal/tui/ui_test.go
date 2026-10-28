@@ -148,7 +148,7 @@ func TestDashboardPollsOnlyWhileVisible(t *testing.T) {
 	if !d.active || !d.looping {
 		t.Fatalf("dashboard should be polling at start (active=%v looping=%v)", d.active, d.looping)
 	}
-	a.goTo(4) // services
+	a.goTo(idx(a, "Services"))
 	_, cmd := d.Update(tickMsg{})
 	if cmd != nil || d.looping {
 		t.Fatal("a hidden dashboard kept polling")
@@ -232,10 +232,10 @@ func TestEverythingFitsEverySize(t *testing.T) {
 func TestSidebarClickSelectsScreen(t *testing.T) {
 	a := newApp(t, true)
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
-	_, cmd := a.Update(tea.MouseClickMsg{X: 4, Y: 7, Button: tea.MouseLeft}) // menu items start at row 2: row 7 is the 6th (Logs)
+	_, cmd := a.Update(tea.MouseClickMsg{X: 4, Y: 2 + idx(a, "Logs"), Button: tea.MouseLeft}) // menu items start at row 2
 	pump(t, a, cmd)
 	if a.screens[a.active].Title() != "Logs" {
-		t.Fatalf("clicked row 7, got %q", a.screens[a.active].Title())
+		t.Fatalf("clicked the Logs row, got %q", a.screens[a.active].Title())
 	}
 	a.Update(tea.MouseClickMsg{X: 60, Y: 5, Button: tea.MouseLeft}) // main pane: no change
 	if a.screens[a.active].Title() != "Logs" {
@@ -318,8 +318,8 @@ func TestPaletteThemeSwitchIsPersistedAndApplied(t *testing.T) {
 
 func TestPaletteOffersServiceActionsAndAsksBeforeRunning(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, "5") // services; wait for the list
-	a.screens[4].(*servicesScreen).Update(servicesMsg{list: []services.Service{{Name: "dropbear", Enabled: true, State: services.Running}}})
+	press(t, a, tab(a, "Services")) // services; wait for the list
+	scr(a, "Services").(*servicesScreen).Update(servicesMsg{list: []services.Service{{Name: "dropbear", Enabled: true, State: services.Running}}})
 	press(t, a, ":")
 	for _, r := range "restart dropbear" {
 		press(t, a, string(r))
@@ -357,8 +357,8 @@ func pumpToast(t *testing.T, a *App) {
 
 func TestDetailPaneOnlyOnWideTerminals(t *testing.T) {
 	a := newApp(t, true)
-	a.screens[4].(*servicesScreen).Update(servicesMsg{list: []services.Service{{Name: "dropbear", Enabled: true, State: services.Running, Start: 19}}})
-	a.active = 4
+	scr(a, "Services").(*servicesScreen).Update(servicesMsg{list: []services.Service{{Name: "dropbear", Enabled: true, State: services.Running, Start: 19}}})
+	a.active = idx(a, "Services")
 	a.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
 	v := plain(a.render())
 	if !strings.Contains(v, "Details") || !strings.Contains(v, "/etc/init.d/dropbear") || !strings.Contains(v, "RUNNING") || !strings.Contains(v, "START=19") {
@@ -373,7 +373,7 @@ func TestDetailPaneOnlyOnWideTerminals(t *testing.T) {
 func TestConfigDetailMasksSecrets(t *testing.T) {
 	a := newApp(t, true)
 	openSecretSection(t, a)
-	u := a.screens[2].(*uciScreen)
+	u := scr(a, "Config").(*uciScreen)
 	for i, o := range u.options() {
 		if o.Key == "private_key" {
 			u.cur[2] = i
@@ -403,7 +403,7 @@ func TestFooterShowsKeyHints(t *testing.T) {
 func TestHelpListsScreenKeys(t *testing.T) {
 	a := newApp(t, true)
 	a.Update(tea.WindowSizeMsg{Width: 130, Height: 40})
-	press(t, a, "5", "?")
+	press(t, a, tab(a, "Services"), "?")
 	v := plain(a.render())
 	if !a.help || !strings.Contains(v, "Services") || !strings.Contains(v, "restart") || !strings.Contains(v, "command palette") {
 		t.Fatalf("help missing content:\n%s", v)

@@ -132,7 +132,9 @@ func (d *dhcpScreen) rows() []dhcpRow {
 		case "host":
 			r := dhcpRow{kind: rowStatic, sec: s}
 			static = append(static, r)
-			have[strings.ToLower(r.get("mac"))] = true
+			for _, m := range strings.Fields(strings.ToLower(r.get("mac"))) {
+				have[m] = true
+			}
 		}
 	}
 	idx := map[string]int{}
@@ -151,7 +153,9 @@ func (d *dhcpScreen) rows() []dhcpRow {
 		}
 	}
 	for _, r := range news {
-		have[strings.ToLower(r.opts["mac"])] = true
+		for _, m := range strings.Fields(strings.ToLower(r.opts["mac"])) {
+			have[m] = true
+		}
 	}
 	for _, l := range d.leases {
 		if !have[strings.ToLower(l.MAC)] {
@@ -244,9 +248,15 @@ func (d *dhcpScreen) open(r dhcpRow, asNew bool) (screen, tea.Cmd) {
 	}
 	taken := func(key, val string) bool {
 		for _, o := range d.rows() {
-			if (o.kind == rowStatic || o.kind == rowNew) && !(!asNew && o.sec.Ref() == r.sec.Ref() && o.kind == rowStatic) &&
-				strings.EqualFold(o.get(key), val) {
-				return true
+			if (o.kind != rowStatic && o.kind != rowNew) || (!asNew && o.kind == rowStatic && o.sec.Ref() == r.sec.Ref()) {
+				continue
+			}
+			for _, have := range strings.Fields(o.get(key)) { // a host can list several MACs
+				for _, want := range strings.Fields(val) {
+					if strings.EqualFold(have, want) {
+						return true
+					}
+				}
 			}
 		}
 		return false
@@ -260,11 +270,13 @@ func (d *dhcpScreen) open(r dhcpRow, asNew bool) (screen, tea.Cmd) {
 		title = "New static lease"
 	}
 	d.form = newForm(title,
-		&field{Label: "Name", Key: "name", Value: name, Required: true, Hint: "a label for this device", Validate: validate.Hostname},
-		&field{Label: "MAC address", Key: "mac", Value: r.get("mac"), Required: true, Hint: "aa:bb:cc:dd:ee:ff",
+		&field{Label: "Name", Key: "name", Value: name, Hint: "a label for this device (optional)", Validate: validate.Hostname},
+		&field{Label: "MAC address", Key: "mac", Value: r.get("mac"), Required: true, Hint: "aa:bb:cc:dd:ee:ff (several allowed, separated by spaces)",
 			Validate: func(s string) error {
-				if err := validate.MAC(s); err != nil {
-					return err
+				for _, m := range strings.Fields(s) {
+					if err := validate.MAC(m); err != nil {
+						return err
+					}
 				}
 				if taken("mac", s) {
 					return fmt.Errorf("already has a reservation")
@@ -321,7 +333,17 @@ func (d *dhcpScreen) stage(f *form) tea.Cmd {
 			}(fl.Value)
 		}
 	}
-	list = append(list, f.Changes("dhcp", sec)...)
+	for _, c := range f.Changes("dhcp", sec) {
+		// An existing "list mac" stays a list: delete it, then add each address.
+		if o, ok := d.edit.sec.Option(c.Option); ok && o.IsList && !d.add && c.Op == changes.OpSet {
+			list = append(list, changes.Change{Op: changes.OpDelete, Config: "dhcp", Section: sec, Option: c.Option, Old: c.Old})
+			for _, v := range strings.Fields(c.Value) {
+				list = append(list, changes.Change{Op: changes.OpAddList, Config: "dhcp", Section: sec, Option: c.Option, Value: v})
+			}
+			continue
+		}
+		list = append(list, c)
+	}
 	for _, c := range list {
 		if err := d.e.Staged.Add(c); err != nil {
 			return toastErr(err)
@@ -375,7 +397,7 @@ func (d *dhcpScreen) View(w, h int) string {
 				det = "DHCP off"
 			}
 		case rowStatic, rowNew:
-			tag, name, mac, ip = "STATIC", r.get("name"), r.get("mac"), r.get("ip")
+			tag, name, mac, ip = "STATIC", orNone(r.get("name")), r.get("mac"), r.get("ip")
 			if r.kind == rowNew {
 				name = r.opts["name"]
 				det = "staged"
@@ -408,6 +430,13 @@ func tagStyle(tag string) string {
 		return sGood.Render(tag)
 	}
 	return sDim.Render(tag)
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "(no name)"
+	}
+	return s
 }
 
 func orDash(s string) string {

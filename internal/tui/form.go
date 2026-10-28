@@ -30,7 +30,10 @@ type field struct {
 	Required bool
 	Validate validate.Func
 	Hint     string
-	err      string
+	// Secret fields are never loaded with the current value and never shown:
+	// an empty Value means "leave as it is".
+	Secret bool
+	err    string
 }
 
 // form is a small vertical form whose fields are bound to UCI options. It
@@ -42,6 +45,8 @@ type form struct {
 	cur     int
 	in      textinput.Model
 	editing bool
+	// Cross checks rules that involve several fields; it sets field errors.
+	Cross func(f *form)
 	// done is set when the user saved; cancelled when they left without saving.
 	done, cancelled bool
 }
@@ -82,6 +87,14 @@ func (f *form) valid() bool {
 			ok = false
 		}
 	}
+	if f.Cross != nil {
+		f.Cross(f)
+		for _, fl := range f.fields {
+			if fl.err != "" {
+				ok = false
+			}
+		}
+	}
 	return ok
 }
 
@@ -100,7 +113,11 @@ func (f *form) dirty() bool {
 func (f *form) Changes(cfg, sec string) []changes.Change {
 	var out []changes.Change
 	for _, fl := range f.fields {
-		if fl.Value == fl.Orig {
+		if fl.Value == fl.Orig || (fl.Secret && fl.Value == "") {
+			continue
+		}
+		if fl.Secret { // the previous value is never put into the diff
+			out = append(out, changes.Change{Op: changes.OpSet, Config: cfg, Section: sec, Option: fl.Key, Value: fl.Value})
 			continue
 		}
 		if fl.Value == "" {
@@ -167,6 +184,10 @@ func (f *form) Update(m tea.KeyPressMsg) tea.Cmd {
 		default:
 			f.editing = true
 			f.in.SetValue(fl.Value)
+			f.in.EchoMode = textinput.EchoNormal
+			if fl.Secret {
+				f.in.EchoMode = textinput.EchoPassword
+			}
 			return f.in.Focus()
 		}
 	}
@@ -192,7 +213,12 @@ func (f *form) View(w, h int) string {
 				val = "[x]"
 			}
 		case kText:
-			if val == "" {
+			switch {
+			case fl.Secret && val != "":
+				val = strings.Repeat("•", len([]rune(val)))
+			case fl.Secret:
+				val = sDim.Render("(unchanged)")
+			case val == "":
 				val = sDim.Render("(not set)")
 			}
 		}

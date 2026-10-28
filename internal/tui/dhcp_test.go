@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/madushakv/owrt-tui/internal/changes"
+	"github.com/madushakv/owrt-tui/internal/uci"
 )
 
 func dhcpOf(t *testing.T, a *App) *dhcpScreen {
@@ -27,7 +28,7 @@ func typeText(t *testing.T, a *App, s string) {
 
 func TestDHCPListsPoolsAndStaticLeases(t *testing.T) {
 	a := newApp(t, true)
-	press(t, a, "2")
+	press(t, a, tab(a, "DHCP"))
 	v := plain(a.render())
 	for _, want := range []string{"POOL", "lan", "STATIC", "printer", "aa:bb:cc:00:00:04", "ACTIVE", "macbook-pro"} {
 		if !strings.Contains(v, want) {
@@ -41,7 +42,7 @@ func TestDHCPListsPoolsAndStaticLeases(t *testing.T) {
 
 func TestDHCPReadOnlyStagesNothing(t *testing.T) {
 	a := newApp(t, true)
-	press(t, a, "2", "n")
+	press(t, a, tab(a, "DHCP"), "n")
 	if dhcpOf(t, a).form != nil || a.env.Staged.Len() != 0 {
 		t.Fatal("read-only mode opened a form")
 	}
@@ -60,7 +61,7 @@ func selectRow(t *testing.T, d *dhcpScreen, kind dhcpKind, contains string) {
 
 func TestMakeActiveLeaseStatic(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, "2")
+	press(t, a, tab(a, "DHCP"))
 	d := dhcpOf(t, a)
 	selectRow(t, d, rowActive, "pixel-8")
 	press(t, a, "s")
@@ -92,7 +93,7 @@ func TestMakeActiveLeaseStatic(t *testing.T) {
 
 func TestStaticLeaseRejectsBadAndDuplicateInput(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, "2", "n")
+	press(t, a, tab(a, "DHCP"), "n")
 	d := dhcpOf(t, a)
 	f := d.form
 	set := func(i int, v string) { f.fields[i].Value = v }
@@ -125,7 +126,7 @@ func TestStaticLeaseRejectsBadAndDuplicateInput(t *testing.T) {
 
 func TestEditPoolStagesOnlyChangedOptions(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, "2")
+	press(t, a, tab(a, "DHCP"))
 	d := dhcpOf(t, a)
 	selectRow(t, d, rowPool, "lan")
 	press(t, a, "enter")
@@ -146,7 +147,7 @@ func TestEditPoolStagesOnlyChangedOptions(t *testing.T) {
 
 func TestPoolRejectsBadLeaseTime(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, "2")
+	press(t, a, tab(a, "DHCP"))
 	d := dhcpOf(t, a)
 	selectRow(t, d, rowPool, "lan")
 	press(t, a, "enter", "down", "down", "enter")
@@ -162,7 +163,7 @@ func TestPoolRejectsBadLeaseTime(t *testing.T) {
 
 func TestDeleteStaticLease(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, "2")
+	press(t, a, tab(a, "DHCP"))
 	d := dhcpOf(t, a)
 	selectRow(t, d, rowStatic, "printer")
 	press(t, a, "d")
@@ -191,5 +192,61 @@ func TestHostileHostnameBecomesSafeName(t *testing.T) {
 		if got := leaseName(in); got != want {
 			t.Errorf("leaseName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The user's real router stores reservations as "list mac" and has hosts with
+// no name; editing must keep the list a list and must not choke on either.
+const realDHCP = `package dhcp
+
+config dhcp 'lan'
+	option interface 'lan'
+	option start '100'
+	option limit '150'
+	option leasetime '12h'
+
+config host
+	option ip '192.168.10.212'
+	list mac '64:82:14:47:41:0F'
+
+config host
+	option name 'Z2473'
+	option ip '192.168.10.235'
+	list mac '5E:18:91:07:E1:D2'
+`
+
+func TestRealRouterListMacReservations(t *testing.T) {
+	cfgs, err := uci.ParseExport(realDHCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newApp(t, false)
+	press(t, a, tab(a, "DHCP"))
+	d := dhcpOf(t, a)
+	d.cfg, d.leases = cfgs[0], nil
+	if v := plain(a.render()); !strings.Contains(v, "(no name)") || !strings.Contains(v, "64:82:14:47:41:0F") {
+		t.Fatalf("nameless list-mac host not shown:\n%s", v)
+	}
+	selectRow(t, d, rowStatic, "Z2473")
+	press(t, a, "enter")
+	// moving to the second field and changing the MAC (case-only changes of the same device are fine)
+	d.form.fields[1].Value = "5E:18:91:07:E1:D3 64:82:14:47:41:0f"
+	press(t, a, "s")
+	if d.form == nil || !strings.Contains(d.form.fields[1].err, "already") {
+		t.Fatalf("a MAC owned by another host was accepted: %+v", d.form)
+	}
+	d.form.fields[1].Value = "5e:18:91:07:e1:d3 5e:18:91:07:e1:d4"
+	press(t, a, "s")
+	if d.form != nil {
+		t.Fatalf("valid multi-MAC edit rejected")
+	}
+	items := a.env.Staged.Items()
+	if len(items) != 3 || items[0].Op != changes.OpDelete || items[0].Option != "mac" ||
+		items[1].Op != changes.OpAddList || items[2].Op != changes.OpAddList || items[2].Value != "5e:18:91:07:e1:d4" {
+		t.Fatalf("list not preserved: %+v", items)
+	}
+	script, err := a.env.Staged.Script(changes.NewPlan(changes.CommitOnly, 0))
+	if err != nil || !strings.Contains(script, "uci add_list 'dhcp.@host[1].mac=5e:18:91:07:e1:d3'") {
+		t.Fatalf("script (%v):\n%s", err, script)
 	}
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,21 @@ func pump(t *testing.T, a *App, cmd tea.Cmd) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+// idx finds a screen by its title so tests do not depend on tab order.
+func idx(a *App, title string) int {
+	for i, s := range a.screens {
+		if s.Title() == title {
+			return i
+		}
+	}
+	panic("no screen " + title)
+}
+
+// tab is the key that opens the titled screen.
+func tab(a *App, title string) string { return strconv.Itoa(idx(a, title) + 1) }
+
+func scr(a *App, title string) screen { return a.screens[idx(a, title)] }
 
 func newApp(t *testing.T, readOnly bool) *App {
 	t.Helper()
@@ -80,19 +96,19 @@ func TestScreensShowDemoData(t *testing.T) {
 	if v := view(a); !strings.Contains(v, "gw-demo") {
 		t.Fatalf("overview missing hostname:\n%s", v)
 	}
-	press(t, a, "3")
+	press(t, a, tab(a, "Config"))
 	if v := view(a); !strings.Contains(v, "network") || !strings.Contains(v, "wireless") {
 		t.Fatalf("config screen missing configs:\n%s", v)
 	}
-	press(t, a, "5")
+	press(t, a, tab(a, "Services"))
 	if v := view(a); !strings.Contains(v, "dropbear") {
 		t.Fatalf("services screen missing dropbear:\n%s", v)
 	}
-	press(t, a, "6")
+	press(t, a, tab(a, "Logs"))
 	if v := view(a); !strings.Contains(v, "daemon") && !strings.Contains(v, "level") {
 		t.Fatalf("logs screen empty:\n%s", v)
 	}
-	press(t, a, "7")
+	press(t, a, tab(a, "Packages"))
 	if v := view(a); !strings.Contains(v, "installed") {
 		t.Fatalf("packages screen empty:\n%s", v)
 	}
@@ -116,8 +132,8 @@ func TestEveryScreenFitsTheTerminal(t *testing.T) {
 // holds the demo private key.
 func openSecretSection(t *testing.T, a *App) {
 	t.Helper()
-	press(t, a, "3", "enter") // network
-	u := a.screens[2].(*uciScreen)
+	press(t, a, tab(a, "Config"), "enter") // network
+	u := scr(a, "Config").(*uciScreen)
 	for i, s := range u.sections() {
 		for _, o := range s.Options {
 			if o.Key == "private_key" {
@@ -150,7 +166,7 @@ func TestReadOnlyStagesNothing(t *testing.T) {
 	a := newApp(t, true)
 	openSecretSection(t, a)
 	press(t, a, "e")
-	if a.screens[2].Capturing() {
+	if scr(a, "Config").Capturing() {
 		t.Fatal("edit mode opened in read-only mode")
 	}
 	press(t, a, "d")
@@ -162,14 +178,14 @@ func TestReadOnlyStagesNothing(t *testing.T) {
 func TestStagedSecretIsMaskedOnChangesScreen(t *testing.T) {
 	a := newApp(t, false)
 	openSecretSection(t, a)
-	u := a.screens[2].(*uciScreen)
+	u := scr(a, "Config").(*uciScreen)
 	for i, o := range u.options() {
 		if o.Key == "private_key" {
 			u.cur[2] = i
 		}
 	}
 	press(t, a, "e")
-	if !a.screens[2].Capturing() {
+	if !scr(a, "Config").Capturing() {
 		t.Fatal("edit did not start")
 	}
 	for _, r := range "NEWsecretVALUE" {
@@ -179,7 +195,7 @@ func TestStagedSecretIsMaskedOnChangesScreen(t *testing.T) {
 	if a.env.Staged.Len() != 1 {
 		t.Fatalf("staged %d changes, want 1", a.env.Staged.Len())
 	}
-	press(t, a, "4")
+	press(t, a, tab(a, "Changes"))
 	v := view(a)
 	if strings.Contains(v, "NEWsecret") || strings.Contains(v, "DEMOdemo") {
 		t.Fatalf("secret leaked on the changes screen:\n%s", v)
@@ -193,7 +209,7 @@ func TestApplyAsksBeforeSending(t *testing.T) {
 	a := newApp(t, false)
 	openSecretSection(t, a)
 	press(t, a, "e", "x", "enter") // stage something
-	press(t, a, "4", "a")
+	press(t, a, tab(a, "Changes"), "a")
 	if a.ask == nil {
 		t.Fatal("apply did not ask for confirmation")
 	}
