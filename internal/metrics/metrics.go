@@ -28,6 +28,7 @@ echo '##net'; cat /proc/net/dev 2>/dev/null
 echo '##ct'; cat /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null
 echo '##ubus'; ubus call network.interface dump 2>/dev/null
 echo '##leases'; cat /tmp/dhcp.leases 2>/dev/null
+echo '##neigh'; ip -4 neigh show 2>/dev/null
 echo '##wifi'
 for d in /sys/class/net/*; do
   n=${d##*/}
@@ -57,6 +58,7 @@ type Sample struct {
 	Ifaces   []Iface
 	Leases   []Lease
 	Stations []Station
+	Neigh    []Neigh
 }
 
 // Counters are cumulative interface counters.
@@ -84,6 +86,10 @@ type Lease struct {
 	IP     string
 	Host   string
 }
+
+// Neigh is one ARP table entry; State is the kernel's view of whether the
+// device answered recently (REACHABLE, DELAY, PROBE, STALE, ...).
+type Neigh struct{ IP, MAC, Dev, State string }
 
 // Station is a connected Wi-Fi client.
 type Station struct {
@@ -138,6 +144,7 @@ func Parse(out string) (Sample, error) {
 	}
 	s.Ifaces = parseUbus(strings.Join(secs["ubus"], "\n"))
 	s.Leases = parseLeases(secs["leases"])
+	s.Neigh = parseNeigh(secs["neigh"])
 	s.Stations = parseWifi(secs["wifi"])
 	return s, nil
 }
@@ -459,4 +466,29 @@ func SortedNet(r Rates) []string {
 		return n[i] < n[j]
 	})
 	return n
+}
+
+// parseNeigh reads "ip -4 neigh show". Entries without a link-layer address
+// (FAILED, INCOMPLETE) say nothing about a device and are dropped.
+func parseNeigh(lines []string) []Neigh {
+	var out []Neigh
+	for _, l := range lines {
+		f := strings.Fields(l)
+		if len(f) < 4 {
+			continue
+		}
+		n := Neigh{IP: f[0], State: f[len(f)-1]}
+		for i := 1; i+1 < len(f); i++ {
+			switch f[i] {
+			case "dev":
+				n.Dev = f[i+1]
+			case "lladdr":
+				n.MAC = strings.ToLower(f[i+1])
+			}
+		}
+		if n.MAC != "" {
+			out = append(out, n)
+		}
+	}
+	return out
 }

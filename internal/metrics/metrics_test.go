@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"math"
+	"os"
 	"strings"
 	"testing"
 )
@@ -196,5 +197,65 @@ func TestScriptIsReadOnly(t *testing.T) {
 		if strings.Contains(Script, bad) {
 			t.Errorf("metrics script contains %q", bad)
 		}
+	}
+}
+
+// A real OpenWrt 25.12 router (anonymised): four cores, no temperature sensor,
+// a wireguard VPN, a USB modem, SQM (ifb4wan), pretty-printed ubus JSON with
+// many empty arrays, one radio with clients and one without.
+func TestParseRealRouterSample(t *testing.T) {
+	b, err := os.ReadFile("testdata/real-router.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Parse(string(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Cores != 4 || s.MemTotal != 248604 || s.MemAvail != 155744 || s.CtCount != 125 || s.CtMax != 31744 {
+		t.Fatalf("basics: cores=%d mem=%d/%d ct=%d/%d", s.Cores, s.MemAvail, s.MemTotal, s.CtCount, s.CtMax)
+	}
+	if s.HasTemp {
+		t.Fatal("this router has no temperature sensor; none should be reported")
+	}
+	if len(s.Net) < 10 {
+		t.Fatalf("net devices: %d", len(s.Net))
+	}
+	var wan Iface
+	names := map[string]Iface{}
+	for _, i := range s.Ifaces {
+		names[i.Name] = i
+		if i.Default {
+			wan = i
+		}
+	}
+	if wan.Name != "wan" || wan.Device != "wan" || wan.Gateway != "192.168.1.1" || len(wan.Addrs) != 1 || wan.Addrs[0] != "192.168.1.2/24" {
+		t.Fatalf("default-route interface: %+v", wan)
+	}
+	if !names["eduvpn"].Up || names["eduvpn"].Proto != "wireguard" || names["wan6"].Up || names["lan"].Device != "br-lan" {
+		t.Fatalf("interfaces: %+v", names)
+	}
+	if len(s.Leases) != 5 || s.Leases[1].Host != "" {
+		t.Fatalf("leases: %+v", s.Leases)
+	}
+	if len(s.Stations) != 3 {
+		t.Fatalf("stations: %+v", s.Stations)
+	}
+	for _, st := range s.Stations {
+		if st.Dev != "phy0-ap0" || st.ESSID != "HomeNet" || st.Signal > -40 || st.Signal < -60 {
+			t.Fatalf("station: %+v", st)
+		}
+	}
+}
+
+func TestParseNeigh(t *testing.T) {
+	n := parseNeigh([]string{
+		"192.168.1.50 dev br-lan lladdr AA:BB:CC:00:00:01 REACHABLE",
+		"192.168.1.60 dev br-lan lladdr aa:bb:cc:00:00:03 STALE",
+		"192.168.1.70 dev br-lan  FAILED", // no address: says nothing about a device
+		"",
+	})
+	if len(n) != 2 || n[0].MAC != "aa:bb:cc:00:00:01" || n[0].State != "REACHABLE" || n[1].State != "STALE" || n[0].Dev != "br-lan" {
+		t.Fatalf("got %+v", n)
 	}
 }

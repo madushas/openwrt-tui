@@ -64,7 +64,7 @@ func (s *SSH) Run(ctx context.Context, cmd string, stdin io.Reader) (Result, err
 	c.Stdout, c.Stderr = &out, &errb
 	c.Stdin = stdin
 	err := c.Run()
-	res := Result{Stdout: out.String(), Stderr: errb.String()}
+	res := Result{Stdout: out.String(), Stderr: errb.String()}.clean()
 	if err == nil {
 		return res, nil
 	}

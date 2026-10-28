@@ -49,7 +49,7 @@ func (s *SSH) Stream(ctx context.Context, cmd string, onLine func(string)) error
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
-		onLine(strings.TrimRight(sc.Text(), "\r"))
+		onLine(Sanitize(strings.TrimRight(sc.Text(), "\r")))
 	}
 	err = c.Wait()
 	if ctx.Err() != nil {

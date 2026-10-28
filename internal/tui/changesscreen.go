@@ -251,7 +251,7 @@ func (c *changesScreen) View(w, h int) string {
 	}
 	items := c.e.Staged.Items()
 	if len(items) == 0 {
-		msg := "\n  Nothing staged. Edit values on the Config screen (2); they appear here for review."
+		msg := "\n  Nothing staged. Edit values on the DHCP or Config screens (2, 3); they appear here for review."
 		if c.note != "" {
 			msg += "\n\n  " + sDim.Render(c.note)
 		}

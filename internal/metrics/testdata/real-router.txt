@@ -1,0 +1,543 @@
+##owrt-metrics
+##load
+0.35 0.49 0.37 1/112 19630
+##uptime
+55182.62 213816.70
+##time
+1793108999
+##cores
+4
+##stat
+cpu  28999 0 243638 21381675 191 0 149161 0 0 0
+##mem
+MemTotal:         248604 kB
+MemFree:          168172 kB
+MemAvailable:     155744 kB
+Buffers:               0 kB
+Cached:            26132 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+##temp
+##net
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   16605     188    0    0    0     0          0         0    16605     188    0    0    0     0       0          0
+  eth0: 8650744811 6764693    0    0    0     0          0         0 841354876 2135880    0    0    0     0       0          0
+   wan: 8623686039 6764693    0 11030    0     0          0         0 824235030 2135857    0    9    0     0       0          0
+  lan3:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  lan2:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  lan1:       0       0    0    0    0     0          0         0        0       0    0    4    0     0       0          0
+  usb0:       0       0    0    0    0     0          0         0        0       0    0    8    0     0       0          0
+  usb1:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  usb2:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+  usb3:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+br-direct:       0       0    0    0    0     0          0         0      684       2    0    0    0     0       0          0
+br-lan: 641877874 1936266    0   58    0     0          0     10423 8115160377 5433572    0    1    0     0       0          0
+eduvpn: 8334688940 6716904    0    0    0     0          0         0 734053248 2126441    0    0    0     0       0          0
+phy1-ap0:       0       0    0    0    0     0          0         0      720       2    0    0    0     0       0          0
+phy0-ap0: 683371658 2157377    0    0    0     0          0         0 8326912112 6747855    0    0    0     0       0          0
+ifb4wan: 8622354232 6763772    0    0    0     0          0         0 8622354232 6763772    0    0    0     0       0          0
+##ct
+125
+31744
+##ubus
+{
+	"interface": [
+		{
+			"interface": "direct",
+			"up": true,
+			"pending": false,
+			"available": true,
+			"autostart": true,
+			"dynamic": false,
+			"uptime": 55151,
+			"l3_device": "br-direct",
+			"proto": "static",
+			"device": "br-direct",
+			"updated": [
+				"addresses"
+			],
+			"metric": 0,
+			"dns_metric": 0,
+			"delegation": true,
+			"ipv4-address": [
+				{
+					"address": "192.168.30.1",
+					"mask": 24
+				}
+			],
+			"ipv6-address": [
+				
+			],
+			"ipv6-prefix": [
+				
+			],
+			"ipv6-prefix-assignment": [
+				
+			],
+			"route": [
+				
+			],
+			"dns-server": [
+				
+			],
+			"dns-search": [
+				
+			],
+			"neighbors": [
+				
+			],
+			"inactive": {
+				"ipv4-address": [
+					
+				],
+				"ipv6-address": [
+					
+				],
+				"route": [
+					
+				],
+				"dns-server": [
+					
+				],
+				"dns-search": [
+					
+				],
+				"neighbors": [
+					
+				]
+			},
+			"data": {
+				
+			}
+		},
+		{
+			"interface": "eduvpn",
+			"up": true,
+			"pending": false,
+			"available": true,
+			"autostart": true,
+			"dynamic": false,
+			"uptime": 55135,
+			"l3_device": "eduvpn",
+			"proto": "wireguard",
+			"updated": [
+				"addresses"
+			],
+			"metric": 0,
+			"dns_metric": 0,
+			"delegation": true,
+			"ipv4-address": [
+				{
+					"address": "10.7.74.30",
+					"mask": 24
+				}
+			],
+			"ipv6-address": [
+				{
+					"address": "fd96:8402:824e:d721::1e",
+					"mask": 64
+				}
+			],
+			"ipv6-prefix": [
+				
+			],
+			"ipv6-prefix-assignment": [
+				
+			],
+			"route": [
+				
+			],
+			"dns-server": [
+				"192.248.1.161",
+				"9.9.9.9",
+				"2401:dd00:1::161",
+				"2620:fe::fe"
+			],
+			"dns-search": [
+				
+			],
+			"neighbors": [
+				
+			],
+			"inactive": {
+				"ipv4-address": [
+					
+				],
+				"ipv6-address": [
+					
+				],
+				"route": [
+					
+				],
+				"dns-server": [
+					
+				],
+				"dns-search": [
+					
+				],
+				"neighbors": [
+					
+				]
+			},
+			"data": {
+				
+			}
+		},
+		{
+			"interface": "lan",
+			"up": true,
+			"pending": false,
+			"available": true,
+			"autostart": true,
+			"dynamic": false,
+			"uptime": 55151,
+			"l3_device": "br-lan",
+			"proto": "static",
+			"device": "br-lan",
+			"updated": [
+				"addresses"
+			],
+			"metric": 0,
+			"dns_metric": 0,
+			"delegation": false,
+			"ipv4-address": [
+				{
+					"address": "192.168.10.1",
+					"mask": 24
+				}
+			],
+			"ipv6-address": [
+				
+			],
+			"ipv6-prefix": [
+				
+			],
+			"ipv6-prefix-assignment": [
+				{
+					"address": "fd84:2a18:4d60::",
+					"mask": 60,
+					"local-address": {
+						
+					}
+				}
+			],
+			"route": [
+				
+			],
+			"dns-server": [
+				
+			],
+			"dns-search": [
+				
+			],
+			"neighbors": [
+				
+			],
+			"inactive": {
+				"ipv4-address": [
+					
+				],
+				"ipv6-address": [
+					
+				],
+				"route": [
+					
+				],
+				"dns-server": [
+					
+				],
+				"dns-search": [
+					
+				],
+				"neighbors": [
+					
+				]
+			},
+			"data": {
+				
+			}
+		},
+		{
+			"interface": "loopback",
+			"up": true,
+			"pending": false,
+			"available": true,
+			"autostart": true,
+			"dynamic": false,
+			"uptime": 55151,
+			"l3_device": "lo",
+			"proto": "static",
+			"device": "lo",
+			"updated": [
+				"addresses"
+			],
+			"metric": 0,
+			"dns_metric": 0,
+			"delegation": true,
+			"ipv4-address": [
+				{
+					"address": "127.0.0.1",
+					"mask": 8
+				}
+			],
+			"ipv6-address": [
+				
+			],
+			"ipv6-prefix": [
+				
+			],
+			"ipv6-prefix-assignment": [
+				
+			],
+			"route": [
+				
+			],
+			"dns-server": [
+				
+			],
+			"dns-search": [
+				
+			],
+			"neighbors": [
+				
+			],
+			"inactive": {
+				"ipv4-address": [
+					
+				],
+				"ipv6-address": [
+					
+				],
+				"route": [
+					
+				],
+				"dns-server": [
+					
+				],
+				"dns-search": [
+					
+				],
+				"neighbors": [
+					
+				]
+			},
+			"data": {
+				
+			}
+		},
+		{
+			"interface": "ovpn_eduvpn",
+			"up": false,
+			"pending": false,
+			"available": false,
+			"autostart": true,
+			"dynamic": false,
+			"proto": "none",
+			"device": "tun0",
+			"data": {
+				
+			},
+			"errors": [
+				{
+					"subsystem": "interface",
+					"code": "NO_DEVICE"
+				}
+			]
+		},
+		{
+			"interface": "wan",
+			"up": true,
+			"pending": false,
+			"available": true,
+			"autostart": true,
+			"dynamic": false,
+			"uptime": 55140,
+			"l3_device": "wan",
+			"proto": "dhcp",
+			"device": "wan",
+			"metric": 0,
+			"dns_metric": 0,
+			"delegation": true,
+			"ipv4-address": [
+				{
+					"address": "192.168.1.2",
+					"mask": 24
+				}
+			],
+			"ipv6-address": [
+				
+			],
+			"ipv6-prefix": [
+				
+			],
+			"ipv6-prefix-assignment": [
+				
+			],
+			"route": [
+				{
+					"target": "0.0.0.0",
+					"mask": 0,
+					"nexthop": "192.168.1.1",
+					"source": "192.168.1.2/32"
+				}
+			],
+			"dns-server": [
+				"192.168.1.1"
+			],
+			"dns-search": [
+				"bbrouter"
+			],
+			"neighbors": [
+				
+			],
+			"inactive": {
+				"ipv4-address": [
+					
+				],
+				"ipv6-address": [
+					
+				],
+				"route": [
+					
+				],
+				"dns-server": [
+					
+				],
+				"dns-search": [
+					
+				],
+				"neighbors": [
+					
+				]
+			},
+			"data": {
+				"dhcpserver": "192.168.1.1",
+				"hostname": "OpenWrt",
+				"leasetime": 86400
+			}
+		},
+		{
+			"interface": "wan6",
+			"up": false,
+			"pending": false,
+			"available": false,
+			"autostart": true,
+			"dynamic": false,
+			"proto": "none",
+			"data": {
+				
+			},
+			"errors": [
+				{
+					"subsystem": "interface",
+					"code": "NO_DEVICE"
+				}
+			]
+		},
+		{
+			"interface": "wwan",
+			"up": true,
+			"pending": false,
+			"available": true,
+			"autostart": true,
+			"dynamic": false,
+			"uptime": 55139,
+			"l3_device": "usb0",
+			"proto": "ncm",
+			"updated": [
+				"data"
+			],
+			"metric": 0,
+			"dns_metric": 0,
+			"delegation": true,
+			"ipv4-address": [
+				
+			],
+			"ipv6-address": [
+				
+			],
+			"ipv6-prefix": [
+				
+			],
+			"ipv6-prefix-assignment": [
+				
+			],
+			"route": [
+				
+			],
+			"dns-server": [
+				
+			],
+			"dns-search": [
+				
+			],
+			"neighbors": [
+				
+			],
+			"inactive": {
+				"ipv4-address": [
+					
+				],
+				"ipv6-address": [
+					
+				],
+				"route": [
+					
+				],
+				"dns-server": [
+					
+				],
+				"dns-search": [
+					
+				],
+				"neighbors": [
+					
+				]
+			},
+			"data": {
+				"manufacturer": "spreadtrum"
+			}
+		},
+		{
+			"interface": "wwan_4",
+			"up": false,
+			"pending": false,
+			"available": true,
+			"autostart": true,
+			"dynamic": true,
+			"proto": "dhcp",
+			"device": "usb0",
+			"data": {
+				"zone": "wan"
+			}
+		}
+	]
+}
+##leases
+1793131074 02:00:00:00:00:01 192.168.10.184 phone-a 02:00:00:00:00:02:7b
+1793147634 02:00:00:00:00:03 192.168.10.186 * 02:00:00:00:00:04:63
+1793147346 02:00:00:00:00:05 192.168.10.212 tv-b 02:00:00:00:00:06:0f
+1793150380 02:00:00:00:00:07 192.168.10.110 phone-c 02:00:00:00:00:08:d6
+1793138459 02:00:00:00:00:09 192.168.10.199 laptop-d 02:00:00:00:00:0a:f1
+##wifi
+dev phy0-ap0
+phy0-ap0 ESSID: "HomeNet"
+02:00:00:00:00:09  -43 dBm / -100 dBm (SNR 57)  80 ms ago
+	RX: 144.4 MBit/s, MCS 15, unknownMHz   1210403 Pkts.
+	TX: 144.4 MBit/s, MCS 15, unknownMHz   1811423 Pkts.
+	expected throughput: 114.8 MBit/s
+
+02:00:00:00:00:05  -53 dBm / -100 dBm (SNR 47)  20 ms ago
+	RX: 144.4 MBit/s, MCS 15, unknownMHz   1442175 Pkts.
+	TX: 144.4 MBit/s, MCS 15, unknownMHz   3321651 Pkts.
+	expected throughput: 104.4 MBit/s
+
+02:00:00:00:00:07  -51 dBm / -100 dBm (SNR 49)  0 ms ago
+	RX: 72.2 MBit/s, MCS 7, unknownMHz    484270 Pkts.
+	TX: 72.2 MBit/s, MCS 7, unknownMHz    735558 Pkts.
+	expected throughput: 56.1 MBit/s
+
+dev phy1-ap0
+phy1-ap0 ESSID: "C:\\TrojanHorse\Virus.exe"
+##end

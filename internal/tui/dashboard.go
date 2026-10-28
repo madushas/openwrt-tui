@@ -365,10 +365,8 @@ func (d *dashboard) panelCPU(w, h int) string {
 
 func (d *dashboard) panelResources(w, h int) string {
 	i := d.e.S.Info
-	bw := max0(w - 2 - 24)
-	if bw > 20 {
-		bw = 20
-	}
+	// Leave room for the longest text after the bar ("2.5 MiB free, low").
+	bw := clampInt(w-2-8-1-1-20, 6, 20)
 	row := func(label string, pct float64, extra string) string {
 		return fmt.Sprintf("%s %s %s", sDim.Render(fmt.Sprintf("%-8s", label)), bar(pct, bw), extra)
 	}
@@ -406,28 +404,54 @@ func (d *dashboard) panelResources(w, h int) string {
 	return panel("Resources", "", strings.Join(lines, "\n"), w, h, false)
 }
 
+// orderedIfaces puts the interface that carries the default route first, then
+// lan, then the other interfaces that are up. Interfaces that are down are
+// returned separately so they can be summarised on one line.
+func orderedIfaces(all []metrics.Iface) (up, down []metrics.Iface) {
+	for _, f := range all {
+		if f.Up {
+			up = append(up, f)
+		} else {
+			down = append(down, f)
+		}
+	}
+	rank := func(f metrics.Iface) int {
+		switch {
+		case f.Default:
+			return 0
+		case f.Name == "lan":
+			return 1
+		}
+		return 2
+	}
+	sort.SliceStable(up, func(i, j int) bool {
+		if ri, rj := rank(up[i]), rank(up[j]); ri != rj {
+			return ri < rj
+		}
+		return up[i].Name < up[j].Name
+	})
+	return up, down
+}
+
 func (d *dashboard) panelNetwork(w, h int) string {
 	var lines []string
-	for _, f := range d.cur.Ifaces {
-		state := chipBad.Render("DOWN")
-		if f.Up {
-			state = chipGood.Render("UP")
-		}
+	up, down := orderedIfaces(d.cur.Ifaces)
+	for _, f := range up {
 		name := f.Name
 		if f.Default {
 			name += " ★"
 		}
-		lines = append(lines, state+" "+sBold.Render(name)+sDim.Render("  "+f.Proto+"  "+f.Device))
+		lines = append(lines, chipGood.Render("UP")+" "+sBold.Render(name)+sDim.Render("  "+f.Proto+"  "+f.Device))
 		detail := ""
 		if len(f.Addrs) > 0 {
 			detail = f.Addrs[0]
+		} else {
+			detail = sDim.Render("no address")
 		}
-		if f.Up && f.Uptime > 0 {
+		if f.Uptime > 0 {
 			detail += sDim.Render("  · up " + uptime(f.Uptime))
 		}
-		if detail != "" {
-			lines = append(lines, "   "+detail)
-		}
+		lines = append(lines, "   "+detail)
 		if f.Default {
 			var extra []string
 			if f.Gateway != "" {
@@ -440,6 +464,13 @@ func (d *dashboard) panelNetwork(w, h int) string {
 				lines = append(lines, "   "+sDim.Render(strings.Join(extra, "  ")))
 			}
 		}
+	}
+	if len(down) > 0 {
+		var names []string
+		for _, f := range down {
+			names = append(names, f.Name)
+		}
+		lines = append(lines, chipBad.Render("DOWN")+" "+sDim.Render(strings.Join(names, ", ")))
 	}
 	if len(lines) == 0 {
 		lines = []string{sDim.Render("no interface data (is ubus available?)")}
@@ -480,7 +511,17 @@ func maxf(a, b float64) float64 {
 func (d *dashboard) panelDevices(w, h int) string {
 	var lines []string
 	lines = append(lines, sDim.Render(fmt.Sprintf("%-10s %11s %11s", "DEVICE", "DOWN", "UP")))
+	idle := 0
+	counters := map[string]metrics.Counters{}
+	for _, c := range d.cur.Net {
+		counters[c.Name] = c
+	}
 	for _, n := range d.devices() {
+		// Ports with nothing plugged in (counters all zero) only add noise.
+		if c, ok := counters[n]; ok && c.RxBytes+c.TxBytes == 0 && n != d.graphDev() {
+			idle++
+			continue
+		}
 		x := d.rates.Net[n]
 		sp := ""
 		if r := d.rx[n]; r != nil && w >= 54 {
@@ -492,6 +533,9 @@ func (d *dashboard) panelDevices(w, h int) string {
 		}
 		lines = append(lines, fmt.Sprintf("%s%-9s %11s %11s%s", mark, clip(n, 9), rate(x.RxBps, d.bits), rate(x.TxBps, d.bits), sp))
 	}
+	if idle > 0 {
+		lines = append(lines, sDim.Render(fmt.Sprintf(" +%d with no traffic", idle)))
+	}
 	return panel("Devices", "i selects", strings.Join(lines, "\n"), w, h, false)
 }
 
@@ -499,12 +543,19 @@ type clientRow struct {
 	name, ip, mac string
 	signal        int
 	wifi, static  bool
+	essid         string
+	state         string // ARP state of a client that is not on Wi-Fi; "" = no entry
+	haveARP       bool   // the router returned an ARP table at all
 }
 
 func (d *dashboard) clients() []clientRow {
 	byMAC := map[string]metrics.Station{}
 	for _, s := range d.cur.Stations {
 		byMAC[s.MAC] = s
+	}
+	arp := map[string]string{}
+	for _, n := range d.cur.Neigh {
+		arp[n.MAC] = n.State
 	}
 	var out []clientRow
 	seen := map[string]bool{}
@@ -514,14 +565,15 @@ func (d *dashboard) clients() []clientRow {
 			r.name = "(unnamed)"
 		}
 		if s, ok := byMAC[l.MAC]; ok {
-			r.wifi, r.signal = true, s.Signal
+			r.wifi, r.signal, r.essid = true, s.Signal, s.ESSID
 		}
+		r.state, r.haveARP = arp[l.MAC], len(arp) > 0
 		seen[l.MAC] = true
 		out = append(out, r)
 	}
 	for _, s := range d.cur.Stations { // associated but no lease (static IP)
 		if !seen[s.MAC] {
-			out = append(out, clientRow{name: s.MAC, mac: s.MAC, wifi: true, signal: s.Signal})
+			out = append(out, clientRow{name: s.MAC, mac: s.MAC, wifi: true, signal: s.Signal, essid: s.ESSID})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return ipLess(out[i].ip, out[j].ip, out[i].name, out[j].name) })
@@ -542,15 +594,27 @@ func (d *dashboard) panelClients(w, h int) string {
 	var lines []string
 	end := min(len(cl), d.scroll+rowsAvail)
 	for _, c := range cl[d.scroll:end] {
-		sig := sDim.Render("wired/other  ")
-		if c.wifi {
+		var sig string
+		switch {
+		case c.wifi:
 			sig = bars(metrics.Bars(c.signal)) + sDim.Render(fmt.Sprintf(" %4d dBm", c.signal))
+			if avail := w - 2 - 51 - 1; c.essid != "" && avail >= 5 {
+				sig += " " + sDim.Render(clip(c.essid, min(avail, 18)))
+			}
+		case c.state == "REACHABLE" || c.state == "DELAY" || c.state == "PROBE":
+			sig = sGood.Render("●") + sDim.Render(" wired / other")
+		case c.state != "":
+			sig = sDim.Render("○ idle")
+		case !c.haveARP: // no ARP table to judge by
+			sig = sDim.Render("not on Wi-Fi")
+		default:
+			sig = sDim.Render("– offline")
 		}
 		name := c.name
 		if c.static {
 			name += sDim.Render(" (static)")
 		}
-		lines = append(lines, fmt.Sprintf("%s  %-15s %s", padVisible(clip(name, 24), 24), c.ip, sig))
+		lines = append(lines, fmt.Sprintf("%s  %-15s %s", padVisible(clip(name, 20), 20), c.ip, sig))
 	}
 	if len(cl) == 0 {
 		lines = []string{sDim.Render(" no DHCP leases or Wi-Fi clients found")}

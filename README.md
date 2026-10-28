@@ -8,7 +8,7 @@ installed on the router. Targets OpenWrt 25.12 (apk) with an opkg backend for
 
 | Piece | State |
 |---|---|
-| SSH transport (system `ssh`, ControlMaster) | verified on a real router (OpenWrt 25.12.2, apk, fw4): `probe`, `services`, `logs`, `uci`, `pkg installed` work. Intermittent exit 255 with no message on back-to-back runs: fixed (`Close` now waits for the shared connection to exit; the read-only CLI retries once). **Re-test needed.** |
+| SSH transport (system `ssh`, ControlMaster) | verified on a real router (OpenWrt 25.12.2, apk, fw4): `probe`, `sample`, `services`, `logs`, `uci`, `pkg installed` work. Intermittent exit 255 with no message on back-to-back runs: fixed (`Close` now waits for the shared connection to exit; the read-only CLI retries once). |
 | Capability probe (release, apk/opkg, fw3/fw4, space, tools, EOL advisories) | done, tested |
 | UCI export parser, staged change set, diff, lockout guard | done, tested |
 | Apply with rollback watchdog, confirm, restore | done, script tested with a fake router; **not yet run on a real device** |
@@ -80,11 +80,6 @@ ProxyJump all apply. It never prompts, so use a key or agent (BatchMode).
 
 Unix only for now (ssh ControlMaster sockets): Linux, macOS, WSL.
 
-Worth reporting back: any command that errors, `probe` showing the wrong
-package manager or firewall, an empty `services` or `pkg installed` list, and
-whether `logs -f` stops cleanly on Ctrl-C (a stray `logread -f` left running on
-the router would be a bug).
-
 ## Layout
 
 ```
@@ -108,20 +103,22 @@ no commands at all.
 ## Develop
 
 ```
-
-make build      # build the binary
-# or
 make check      # vet, race-enabled tests, gofmt
 ```
 
 Tests use `transport.Fake`, so no router is needed.
 
-## Next
+## DHCP and static leases (phase 3a)
 
-1. Use the TUI on the real router; report layout problems, wrong keys and anything confusing.
-2. Run the apply/rollback script against a real or QEMU OpenWrt device before
-   trusting it. Check especially that the watchdog survives the SSH session
-   dropping, and that `reload_config` is enough to apply network changes.
-3. Try the key wizard against a real router (it needs a root password set and password SSH enabled). It has only been tested with scripted ssh tools.
-4. Improve firewall detection (fw3 and fw4 binaries can both be present).
-5. Later phases from the plan: Host analyzer, WireGuard analyzer, scheduled tasks.
+The **DHCP** screen lists address pools, static leases and live leases that have no reservation yet.
+`s` turns a live lease into a static lease (name, MAC and IP prefilled; hostnames from the router are
+sanitised), `n` adds one by hand, `enter` edits a pool or reservation, `d` deletes a reservation.
+Everything is validated as you type, duplicates of an existing MAC or IP are refused, and the result is
+only *staged*: review and apply it on the Changes screen. Read-only mode blocks the forms entirely.
+
+## Wi-Fi (phase 3b)
+
+The **Wi-Fi** screen lists each radio with the networks on it. `enter` edits a radio (channel, width, country,
+off) or a network (name, security, password, hidden, client isolation, off); `t` turns one on or off.
+Passwords are never loaded, shown, echoed or put in the diff: leaving the field empty keeps the current one,
+and a network with no password cannot be switched to WPA without entering one. Channels are checked against the band.

@@ -176,7 +176,7 @@ func (u *uciScreen) editKey(m tea.KeyPressMsg) (screen, tea.Cmd) {
 		if err != nil {
 			return u, toastErr(err)
 		}
-		return u, toast("staged; review and apply on the Changes screen (3)")
+		return u, toast("staged; review and apply on the Changes screen (c)")
 	}
 	var cmd tea.Cmd
 	u.input, cmd = u.input.Update(m)
@@ -200,7 +200,7 @@ func (u *uciScreen) stageDelete() (screen, tea.Cmd) {
 	if err := u.e.Staged.Add(c); err != nil {
 		return u, toastErr(err)
 	}
-	return u, toast("delete staged; review it on the Changes screen (3)")
+	return u, toast("delete staged; review it on the Changes screen (c)")
 }
 
 func (u *uciScreen) View(w, h int) string {
