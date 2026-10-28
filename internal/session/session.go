@@ -17,6 +17,7 @@ import (
 	"github.com/madushakv/owrt-tui/internal/services"
 	"github.com/madushakv/owrt-tui/internal/transport"
 	"github.com/madushakv/owrt-tui/internal/uci"
+	"github.com/madushakv/owrt-tui/internal/wificaps"
 )
 
 // ErrReadOnly is returned by every mutating method in read-only mode.
@@ -153,6 +154,16 @@ func (s *Session) Sample(ctx context.Context) (metrics.Sample, error) {
 		return metrics.Sample{}, fmt.Errorf("sampling failed (exit %d): %s", res.ExitCode, strings.TrimSpace(res.Stderr))
 	}
 	return metrics.Parse(res.Stdout)
+}
+
+// WifiCaps reads what each radio supports. It only reads, so it is allowed in
+// read-only mode; a router without iw simply reports no capabilities.
+func (s *Session) WifiCaps(ctx context.Context) (wificaps.Caps, error) {
+	res, err := transport.RunScript(ctx, s.T, wificaps.Script)
+	if err != nil {
+		return wificaps.Caps{}, err
+	}
+	return wificaps.Parse(res.Stdout), nil
 }
 
 // ---- services ----

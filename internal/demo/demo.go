@@ -138,6 +138,7 @@ round-trip min/avg/max = 9.1/9.6/10.4 ms
 func Router() *transport.Fake {
 	return (&transport.Fake{Name: "demo"}).
 		OnFunc("##owrt-metrics", metricsGen()).
+		On("##owrt-wifi-caps", wifiCaps).
 		On("ubus call system board", probe).
 		On("uci export", uciExport).
 		On("ubus call service list", services).
@@ -254,4 +255,35 @@ AA:BB:CC:00:00:01  -48 dBm / -95 dBm (SNR 47)  80 ms ago
 AA:BB:CC:00:00:02  -63 dBm / -95 dBm (SNR 32)  120 ms ago
 AA:BB:CC:00:00:03  -74 dBm / -95 dBm (SNR 21)  300 ms ago
 ##end
+`
+
+// wifiCaps is "iw phy info" for a small dual-band router: 2.4 GHz HT only, and
+// 5 GHz up to VHT80 with the high channels locked until a country is set.
+const wifiCaps = `##phy phy0 /sys/devices/platform/soc/radio0
+Wiphy phy0
+	Band 1:
+		Capabilities: 0x1fe
+			HT20/HT40
+		Frequencies:
+			* 2412.0 MHz [1] (20.0 dBm)
+			* 2437.0 MHz [6] (20.0 dBm)
+			* 2462.0 MHz [11] (20.0 dBm)
+			* 2467.0 MHz [12] (20.0 dBm) (no IR)
+			* 2472.0 MHz [13] (20.0 dBm) (no IR)
+##phy phy1 /sys/devices/platform/soc/radio1
+Wiphy phy1
+	Band 2:
+		Capabilities: 0x1ff
+			HT20/HT40
+		VHT Capabilities (0x318001b0):
+			Supported Channel Width: neither 160 nor 80+80
+		Frequencies:
+			* 5180.0 MHz [36] (20.0 dBm)
+			* 5200.0 MHz [40] (20.0 dBm)
+			* 5260.0 MHz [52] (20.0 dBm) (no IR, radar detection)
+			* 5745.0 MHz [149] (20.0 dBm) (no IR)
+			* 5845.0 MHz [169] (disabled)
+##reg
+global
+country 00: DFS-UNSET
 `

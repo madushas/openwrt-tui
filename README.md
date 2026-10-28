@@ -122,3 +122,7 @@ The **Wi-Fi** screen lists each radio with the networks on it. `enter` edits a r
 off) or a network (name, security, password, hidden, client isolation, off); `t` turns one on or off.
 Passwords are never loaded, shown, echoed or put in the diff: leaving the field empty keeps the current one,
 and a network with no password cannot be switched to WPA without entering one. Channels are checked against the band.
+
+The Wi-Fi radio form reads each radio's real capabilities (`iw phy info`, read-only): only the channels and
+widths the chip supports are offered, DFS and country-locked channels are labelled, and a missing country
+code (world region) is called out.

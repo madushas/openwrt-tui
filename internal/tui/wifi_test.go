@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/madushakv/owrt-tui/internal/changes"
 	"github.com/madushakv/owrt-tui/internal/uci"
+	"github.com/madushakv/owrt-tui/internal/wificaps"
 )
 
 func wifiOf(t *testing.T, a *App) *wifiScreen { return scr(a, "Wi-Fi").(*wifiScreen) }
@@ -152,5 +154,86 @@ func TestWifiToggleDisable(t *testing.T) {
 	items := a.env.Staged.Items()
 	if len(items) != 1 || items[0].Op != changes.OpSet || items[0].Option != "disabled" || items[0].Value != "1" {
 		t.Fatalf("staged %+v", items)
+	}
+}
+
+const realWireless = `package wireless
+
+config wifi-device 'radio0'
+	option type 'mac80211'
+	option path '1e140000.pcie/pci0000:00/0000:00:01.0/0000:02:00.0'
+	option band '2g'
+	option channel '1'
+	option htmode 'HT20'
+
+config wifi-device 'radio1'
+	option type 'mac80211'
+	option path '1e140000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0'
+	option band '5g'
+	option channel '36'
+	option htmode 'VHT80'
+`
+
+// realCapsApp opens the Wi-Fi screen with the user's real radios loaded.
+func realCapsApp(t *testing.T) (*App, *wifiScreen) {
+	t.Helper()
+	b, err := os.ReadFile("../wificaps/testdata/mt7603-mt7662.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgs, err := uci.ParseExport(realWireless)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newApp(t, false)
+	w := wifiOf(t, a)
+	w.cfg, w.caps = cfgs[0], wificaps.Parse(string(b))
+	press(t, a, tab(a, "Wi-Fi"))
+	return a, w
+}
+
+func TestRadioFormOffersOnlyWhatTheChipSupports(t *testing.T) {
+	a, w := realCapsApp(t)
+	w.cur = 1 // radio1, 5 GHz
+	press(t, a, "enter")
+	f := w.form
+	if got := strings.Join(f.fields[1].Choices, ","); got != "VHT20,VHT40,VHT80" {
+		t.Fatalf("5 GHz modes %q: this MT7662 has no 160 MHz", got)
+	}
+	if !strings.Contains(f.fields[0].Hint, "36-64, 100-144") || !strings.Contains(f.fields[0].Hint, "149-165 need a country") {
+		t.Fatalf("channel hint: %q", f.fields[0].Hint)
+	}
+	if !strings.Contains(f.fields[2].Hint, "not set") {
+		t.Fatalf("country hint: %q", f.fields[2].Hint)
+	}
+	for ch, want := range map[string]string{"149": "locked until a country", "169": "disabled", "11": "no channel", "52": ""} {
+		f.fields[0].Value = ch
+		f.fields[0].check()
+		if (want == "") != (f.fields[0].err == "") || !strings.Contains(f.fields[0].err, want) {
+			t.Errorf("channel %s: err %q, want %q", ch, f.fields[0].err, want)
+		}
+	}
+}
+
+func TestRadio24FormHasOnlyHT(t *testing.T) {
+	a, w := realCapsApp(t)
+	w.cur = 0
+	press(t, a, "enter")
+	if got := strings.Join(w.form.fields[1].Choices, ","); got != "HT20,HT40" {
+		t.Fatalf("2.4 GHz modes %q", got)
+	}
+	w.form.fields[0].Value = "13"
+	w.form.fields[0].check()
+	if !strings.Contains(w.form.fields[0].err, "country") {
+		t.Fatalf("channel 13 under the world region: %q", w.form.fields[0].err)
+	}
+}
+
+func TestCompactChannels(t *testing.T) {
+	if got := compactChannels([]int{1, 2, 3, 6, 11}, 1); got != "1-3, 6, 11" {
+		t.Fatal(got)
+	}
+	if got := compactChannels([]int{36, 40, 44, 100}, 4); got != "36-44, 100" {
+		t.Fatal(got)
 	}
 }
