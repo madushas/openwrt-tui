@@ -46,7 +46,7 @@ func (u *uciScreen) Init() tea.Cmd { return u.load() }
 func (u *uciScreen) load() tea.Cmd {
 	u.loading = true
 	return u.e.call(func(ctx context.Context) tea.Msg {
-		c, err := u.e.S.LoadUCI(ctx)
+		c, err := u.e.loadUCI(ctx)
 		return uciMsg{c, err}
 	})
 }
@@ -121,6 +121,7 @@ func (u *uciScreen) key(m tea.KeyPressMsg) (screen, tea.Cmd) {
 			return u, toast("secrets are visible; press v to hide them again")
 		}
 	case "g":
+		u.e.invalidate()
 		return u, u.load()
 	case "e":
 		return u.startEdit()

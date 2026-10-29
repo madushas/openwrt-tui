@@ -99,6 +99,9 @@ var anonRef = regexp.MustCompile(`^@([A-Za-z0-9_]+)\[(-?\d+)\]$`)
 // additions therefore run first, in the order they were staged, and whole
 // section deletes run last, highest position first, so each delete leaves the
 // positions of the remaining ones unchanged.
+// Ordered returns the changes in the order the apply script runs them.
+func (s *Set) Ordered() []Change { return s.ordered() }
+
 func (s *Set) ordered() []Change {
 	var first, deletes []Change
 	for _, c := range s.items {

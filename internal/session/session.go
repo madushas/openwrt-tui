@@ -8,15 +8,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/madushakv/owrt-tui/internal/changes"
+	"github.com/madushakv/owrt-tui/internal/clients"
 	"github.com/madushakv/owrt-tui/internal/device"
+	"github.com/madushakv/owrt-tui/internal/health"
 	"github.com/madushakv/owrt-tui/internal/metrics"
 	"github.com/madushakv/owrt-tui/internal/pkgmgr"
+	"github.com/madushakv/owrt-tui/internal/postcheck"
 	"github.com/madushakv/owrt-tui/internal/services"
 	"github.com/madushakv/owrt-tui/internal/transport"
 	"github.com/madushakv/owrt-tui/internal/uci"
+	"github.com/madushakv/owrt-tui/internal/validate"
+	"github.com/madushakv/owrt-tui/internal/wificaps"
 )
 
 // ErrReadOnly is returned by every mutating method in read-only mode.
@@ -44,6 +50,20 @@ func Connect(ctx context.Context, t transport.Transport, readOnly bool) (*Sessio
 		s.pkg = &pkgmgr.Runner{B: b, T: t}
 	}
 	return s, nil
+}
+
+// Host is the address or name the session connects to (without the user), for
+// checks that need to know which interface carries the connection.
+func (s *Session) Host() string {
+	d, ok := s.T.(interface{ Describe() string })
+	if !ok {
+		return ""
+	}
+	h := d.Describe()
+	if i := strings.LastIndex(h, "@"); i >= 0 {
+		h = h[i+1:]
+	}
+	return h
 }
 
 func (s *Session) requireWrite() error {
@@ -153,6 +173,83 @@ func (s *Session) Sample(ctx context.Context) (metrics.Sample, error) {
 		return metrics.Sample{}, fmt.Errorf("sampling failed (exit %d): %s", res.ExitCode, strings.TrimSpace(res.Stderr))
 	}
 	return metrics.Parse(res.Stdout)
+}
+
+// PostCheck runs the read-only health checks used to decide whether a change
+// can be kept. It is allowed in read-only mode.
+func (s *Session) PostCheck(ctx context.Context) (postcheck.Result, error) {
+	res, err := transport.RunScript(ctx, s.T, postcheck.Script)
+	if err != nil {
+		return nil, err
+	}
+	return postcheck.Parse(res.Stdout), nil
+}
+
+// HealthFacts gathers what the health rules need beyond the configuration. It
+// only reads, so it is allowed in read-only mode. Missing pieces stay empty.
+func (s *Session) HealthFacts(ctx context.Context) (health.Facts, error) {
+	res, err := transport.RunScript(ctx, s.T, health.Script)
+	if err != nil {
+		return health.Facts{}, err
+	}
+	f := health.ParseFacts(res.Stdout)
+	if svcs, err := s.Services(ctx); err == nil {
+		f.Services = svcs
+	}
+	return f, nil
+}
+
+// Clients reads the raw per-device data. It only reads.
+func (s *Session) Clients(ctx context.Context) (clients.Raw, error) {
+	res, err := transport.RunScript(ctx, s.T, clients.Script)
+	if err != nil {
+		return clients.Raw{}, err
+	}
+	return clients.ParseRaw(res.Stdout), nil
+}
+
+var devRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,15}$`)
+
+// Kick disconnects a Wi-Fi client; it may reconnect at once.
+func (s *Session) Kick(ctx context.Context, iface, mac string) error {
+	if err := s.requireWrite(); err != nil {
+		return err
+	}
+	if !devRe.MatchString(iface) || validate.MAC(mac) != nil {
+		return fmt.Errorf("invalid interface or MAC address")
+	}
+	return s.runOK(ctx, fmt.Sprintf(`ubus call hostapd.%s del_client '{"addr":"%s","reason":5,"deauth":false,"ban_time":0}'`, iface, strings.ToLower(mac)))
+}
+
+// Wake sends a wake-on-LAN packet through dev, using etherwake if installed.
+func (s *Session) Wake(ctx context.Context, dev, mac string) error {
+	if err := s.requireWrite(); err != nil {
+		return err
+	}
+	if !devRe.MatchString(dev) || validate.MAC(mac) != nil {
+		return fmt.Errorf("invalid interface or MAC address")
+	}
+	res, err := s.T.Run(ctx, fmt.Sprintf("command -v etherwake >/dev/null 2>&1 || exit 127; etherwake -i %s %s", dev, strings.ToLower(mac)), nil)
+	if err != nil {
+		return err
+	}
+	switch res.ExitCode {
+	case 0:
+		return nil
+	case 127:
+		return fmt.Errorf("wake-on-LAN needs the etherwake package on the router (install it on the Packages screen)")
+	}
+	return fmt.Errorf("etherwake failed (exit %d): %s", res.ExitCode, strings.TrimSpace(res.Stderr))
+}
+
+// WifiCaps reads what each radio supports. It only reads, so it is allowed in
+// read-only mode; a router without iw simply reports no capabilities.
+func (s *Session) WifiCaps(ctx context.Context) (wificaps.Caps, error) {
+	res, err := transport.RunScript(ctx, s.T, wificaps.Script)
+	if err != nil {
+		return wificaps.Caps{}, err
+	}
+	return wificaps.Parse(res.Stdout), nil
 }
 
 // ---- services ----

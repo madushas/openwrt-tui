@@ -11,6 +11,9 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/madushakv/owrt-tui/internal/changes"
+	"github.com/madushakv/owrt-tui/internal/model"
+	"github.com/madushakv/owrt-tui/internal/postcheck"
+	"github.com/madushakv/owrt-tui/internal/preflight"
 	"github.com/madushakv/owrt-tui/internal/transport"
 	"github.com/madushakv/owrt-tui/internal/uci"
 )
@@ -34,9 +37,15 @@ type changesScreen struct {
 	planID   string
 	deadline time.Time
 	note     string
+
+	// Smart confirm: keep the change when health checks that passed before the
+	// apply still pass afterwards, instead of waiting for the user.
+	smart    bool
+	baseline postcheck.Result
+	streak   int
 }
 
-func newChanges(e *env) *changesScreen { return &changesScreen{e: e, tmoIdx: 1} }
+func newChanges(e *env) *changesScreen { return &changesScreen{e: e, tmoIdx: 1, smart: true} }
 
 func (c *changesScreen) Title() string   { return "Changes" }
 func (c *changesScreen) Init() tea.Cmd   { return nil }
@@ -45,14 +54,24 @@ func (c *changesScreen) Keys() string {
 	if c.phase == phasePending {
 		return "y keep changes  r roll back now  s check status"
 	}
-	return "a apply  m toggle rollback  t timeout  x clear  backspace unstage"
+	return "a apply  m toggle rollback  h smart confirm  t timeout  x clear  backspace unstage"
 }
 
 type applyDoneMsg struct {
 	plan changes.Plan
 	err  error
+	base postcheck.Result // health before the change, for smart confirm
 }
-type confirmDoneMsg struct{ err error }
+type confirmDoneMsg struct {
+	err  error
+	auto bool
+}
+type smartTickMsg string
+type smartResultMsg struct {
+	id  string
+	res postcheck.Result
+	err error
+}
 type restoreDoneMsg struct{ err error }
 type statusMsg struct {
 	id, status string
@@ -60,7 +79,19 @@ type statusMsg struct {
 }
 type pollMsg string
 
+// preflight checks what the router would look like after the staged changes.
+func (c *changesScreen) preflight() []preflight.Finding {
+	before := c.e.peekUCI()
+	if before == nil || c.e.Staged.Len() == 0 {
+		return nil
+	}
+	return preflight.Check(before, model.Overlay(before, c.e.Staged), preflight.Context{Host: c.e.S.Host()})
+}
+
 func (c *changesScreen) mode() changes.Mode {
+	if preflight.NeedsRollback(c.preflight()) {
+		return changes.WithRollback // a change that can cut the session never goes out bare
+	}
 	if c.userMode != nil {
 		return *c.userMode
 	}
@@ -75,8 +106,48 @@ func (c *changesScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 		if m.err != nil {
 			return c, toastErr(fmt.Errorf("confirm failed: %w (the router may still roll back)", m.err))
 		}
-		c.finish("changes confirmed and kept")
-		return c, tea.Batch(toast("changes confirmed and kept"), func() tea.Msg { return uciChangedMsg{} })
+		note := "changes confirmed and kept"
+		if m.auto {
+			note = "changes kept automatically: the health checks stayed green"
+		}
+		c.finish(note)
+		return c, tea.Batch(toast(note), func() tea.Msg { return uciChangedMsg{} })
+	case smartTickMsg:
+		if c.phase != phasePending || string(m) != c.planID {
+			return c, nil
+		}
+		if time.Until(c.deadline) < 8*time.Second {
+			c.note = "smart confirm stopped: too close to the deadline. Press y to keep the change or let it roll back."
+			return c, nil
+		}
+		id := c.planID
+		return c, c.e.callFor(20*time.Second, func(ctx context.Context) tea.Msg {
+			r, err := c.e.S.PostCheck(ctx)
+			return smartResultMsg{id, r, err}
+		})
+	case smartResultMsg:
+		if c.phase != phasePending || m.id != c.planID {
+			return c, nil
+		}
+		if m.err != nil { // the router is busy restarting its network: ask again
+			c.streak = 0
+			c.note = "smart confirm: waiting for the router to answer"
+			return c, c.smartTick(5 * time.Second)
+		}
+		if regs := postcheck.Regressions(c.baseline, m.res); len(regs) > 0 {
+			c.streak = 0
+			c.note = "smart confirm: still failing: " + strings.Join(regs, "; ")
+			return c, c.smartTick(5 * time.Second)
+		}
+		c.streak++
+		if c.streak >= 2 {
+			id := c.planID
+			return c, c.e.call(func(ctx context.Context) tea.Msg {
+				return confirmDoneMsg{c.e.S.Confirm(ctx, id), true}
+			})
+		}
+		c.note = "smart confirm: checks healthy, verifying once more"
+		return c, c.smartTick(4 * time.Second)
 	case restoreDoneMsg:
 		if m.err != nil {
 			return c, toastErr(fmt.Errorf("restore failed: %w", m.err))
@@ -111,6 +182,23 @@ func (c *changesScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 	return c, nil
 }
 
+// smartTick schedules the next health check for the current plan.
+func (c *changesScreen) smartTick(d time.Duration) tea.Cmd {
+	id := c.planID
+	return tea.Tick(d, func(time.Time) tea.Msg { return smartTickMsg(id) })
+}
+
+// startSmart begins watching a freshly applied plan if there is a baseline.
+func (c *changesScreen) startSmart(base postcheck.Result) tea.Cmd {
+	c.baseline, c.streak = base, 0
+	if !c.smart || base.Passing() == 0 {
+		c.baseline = nil
+		return nil
+	}
+	c.note = "smart confirm: watching " + fmt.Sprint(base.Passing()) + " health checks"
+	return c.smartTick(8 * time.Second) // let the services settle first
+}
+
 func (c *changesScreen) finish(note string) {
 	c.e.Staged.Clear()
 	c.phase, c.planID, c.note, c.cur = phaseIdle, "", note, 0
@@ -139,14 +227,19 @@ func (c *changesScreen) applied(m applyDoneMsg) (screen, tea.Cmd) {
 		c.phase, c.planID = phasePending, m.plan.ID
 		c.deadline = time.Now().Add(time.Duration(m.plan.Timeout) * time.Second)
 		c.note = ""
-		return c, c.poll()
+		return c, tea.Batch(c.poll(), c.startSmart(m.base))
 	case rollback && errors.Is(m.err, transport.ErrConn):
 		// Expected when network settings change: the link dropped. The watchdog
 		// on the router decides; keep polling so the user can still confirm.
 		c.phase, c.planID = phasePending, m.plan.ID
 		c.deadline = time.Now().Add(time.Duration(m.plan.Timeout) * time.Second)
 		c.note = "connection dropped during apply; if the new settings work, reconnect and press y before the timer ends"
-		return c, c.poll()
+		note := c.note
+		cmd := c.startSmart(m.base)
+		if cmd != nil {
+			c.note = note + " (smart confirm will try as soon as the router answers)"
+		}
+		return c, tea.Batch(c.poll(), cmd)
 	}
 	c.phase = phaseIdle
 	c.note = "apply failed: " + m.err.Error()
@@ -162,7 +255,7 @@ func (c *changesScreen) key(k string) (screen, tea.Cmd) {
 		switch k {
 		case "y":
 			return c, c.e.call(func(ctx context.Context) tea.Msg {
-				return confirmDoneMsg{c.e.S.Confirm(ctx, id)}
+				return confirmDoneMsg{c.e.S.Confirm(ctx, id), false}
 			})
 		case "r":
 			return c, c.e.call(func(ctx context.Context) tea.Msg {
@@ -193,6 +286,9 @@ func (c *changesScreen) key(k string) (screen, tea.Cmd) {
 			}
 		}
 	case "m":
+		if preflight.NeedsRollback(c.preflight()) {
+			return c, toast("rollback stays on: this change can cut your connection")
+		}
 		nm := changes.WithRollback
 		if c.mode() == changes.WithRollback {
 			nm = changes.CommitOnly
@@ -200,6 +296,8 @@ func (c *changesScreen) key(k string) (screen, tea.Cmd) {
 		c.userMode = &nm
 	case "t":
 		c.tmoIdx = (c.tmoIdx + 1) % len(timeouts)
+	case "h":
+		c.smart = !c.smart
 	case "a":
 		return c.apply()
 	}
@@ -221,15 +319,39 @@ func (c *changesScreen) apply() (screen, tea.Cmd) {
 		prompt = fmt.Sprintf("Apply %d changes WITHOUT rollback?", c.e.Staged.Len())
 	}
 	danger := mode == changes.CommitOnly && risk >= changes.RiskMedium
+	pf := c.preflight()
+	if n := countSev(pf, preflight.Danger); n > 0 {
+		prompt += fmt.Sprintf(" %d DANGER finding(s) above.", n)
+		danger = true
+	}
 	return c, func() tea.Msg {
 		return askMsg{Prompt: prompt, Danger: danger, Yes: func() tea.Cmd {
 			c.phase = phaseApplying
+			smart := c.smart && mode == changes.WithRollback
 			return c.e.callFor(2*time.Minute, func(ctx context.Context) tea.Msg {
+				var base postcheck.Result
+				if smart {
+					base, _ = c.e.S.PostCheck(ctx) // no baseline just means no automatic confirm
+				}
+				ent := c.e.snapshot(ctx)
 				_, err := c.e.S.Apply(ctx, c.e.Staged, plan)
-				return applyDoneMsg{plan, err}
+				if err == nil || errors.Is(err, transport.ErrConn) {
+					c.e.saveEntry(ent)
+				}
+				return applyDoneMsg{plan, err, base}
 			})
 		}}
 	}
+}
+
+func countSev(fs []preflight.Finding, s preflight.Severity) int {
+	n := 0
+	for _, f := range fs {
+		if f.Sev == s {
+			n++
+		}
+	}
+	return n
 }
 
 func (c *changesScreen) View(w, h int) string {
@@ -244,6 +366,9 @@ func (c *changesScreen) View(w, h int) string {
 		}
 		b.WriteString("\n  " + sWarn.Render(fmt.Sprintf("Applied. Rolling back in %s unless you confirm.", left)) + "\n")
 		b.WriteString("  Check that the router and your connection still work, then press y to keep the changes.\n")
+		if c.baseline != nil {
+			b.WriteString("  " + sDim.Render("Smart confirm keeps them after two clean health checks; if they fail the router rolls back.") + "\n")
+		}
 		if c.note != "" {
 			b.WriteString("\n  " + sDim.Render(c.note) + "\n")
 		}
@@ -259,7 +384,7 @@ func (c *changesScreen) View(w, h int) string {
 	}
 	risk, findings := c.e.Staged.Guard()
 	b.WriteString(fmt.Sprintf(" %d staged changes   risk: %s\n", len(items), riskStyle(risk).Render(risk.String())))
-	lo, hi := window(len(items), c.cur, h-6-len(findings))
+	lo, hi := window(len(items), c.cur, h-6-len(findings)-2*len(c.preflight()))
 	for i := lo; i < hi; i++ {
 		line := "  " + describe(items[i])
 		if i == c.cur {
@@ -267,14 +392,40 @@ func (c *changesScreen) View(w, h int) string {
 		}
 		b.WriteString(line + "\n")
 	}
-	for _, f := range findings {
-		b.WriteString(riskStyle(f.Risk).Render("  ! "+f.Why) + "\n")
+	pf := c.preflight()
+	if c.e.peekUCI() == nil {
+		for _, f := range findings { // no snapshot to compare with: fall back to the generic notes
+			b.WriteString(riskStyle(f.Risk).Render("  ! "+f.Why) + "\n")
+		}
+	}
+	for _, f := range pf {
+		st := sDim
+		switch f.Sev {
+		case preflight.Danger:
+			st = sBad
+		case preflight.Warn:
+			st = sWarn
+		}
+		for i, l := range wrap(f.Msg, max0(w-6)) {
+			pre := "  ! "
+			if i > 0 {
+				pre = "    "
+			}
+			b.WriteString(st.Render(pre+l) + "\n")
+		}
 	}
 	mode := "commit only (no safety net)"
 	if c.mode() == changes.WithRollback {
 		mode = fmt.Sprintf("with rollback, %ds to confirm", timeouts[c.tmoIdx])
 	}
 	b.WriteString("\n  apply mode: " + sBold.Render(mode) + "\n")
+	if c.mode() == changes.WithRollback {
+		sm := "off (you confirm by hand)"
+		if c.smart {
+			sm = "on (keeps the change if gateway, DNS, WireGuard and services stay healthy)"
+		}
+		b.WriteString("  smart confirm: " + sm + "\n")
+	}
 	return b.String()
 }
 

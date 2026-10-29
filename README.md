@@ -4,7 +4,7 @@ A terminal UI for managing OpenWrt routers over SSH. Agentless: nothing is
 installed on the router. Targets OpenWrt 25.12 (apk) with an opkg backend for
 24.10 and older.
 
-## Status: Phase M (MVP)
+## Status: Phase 6 (clients)
 
 | Piece | State |
 |---|---|
@@ -122,3 +122,47 @@ The **Wi-Fi** screen lists each radio with the networks on it. `enter` edits a r
 off) or a network (name, security, password, hidden, client isolation, off); `t` turns one on or off.
 Passwords are never loaded, shown, echoed or put in the diff: leaving the field empty keeps the current one,
 and a network with no password cannot be switched to WPA without entering one. Channels are checked against the band.
+
+The Wi-Fi radio form reads each radio's real capabilities (`iw phy info`, read-only): only the channels and
+widths the chip supports are offered, DFS and country-locked channels are labelled, and a missing country
+code (world region) is called out.
+
+## Safe apply, history and drift (phase 4)
+
+- **Preflight** compares the configuration before and after your staged changes and reports only
+  problems the change introduces (lock-out of the management interface or SSH, overlapping subnets,
+  DHCP pool outside the subnet, duplicate static leases, port conflicts, Wi-Fi without a key). A
+  lock-out finding forces rollback mode.
+- **Smart confirm** (key `h` on Changes): a health check is taken before the apply and again after;
+  if gateway, DNS, WireGuard handshakes and key services are healthy twice in a row, the change is
+  confirmed automatically. If something regressed, nothing is confirmed and the router rolls back.
+- **History** (screen 7): every apply is recorded on this PC. `r` stages the exact undo, which then
+  goes through preflight, rollback and smart confirm like any other change.
+- **Drift**: a fingerprint of every config is stored after each apply. If the router differs on the
+  next start (changed by LuCI, SSH, or a script), you are told which configs changed; `a` accepts it.
+- **Git export** (opt in): `-export-dir ~/router-configs` commits the *masked* configuration after
+  every apply, so `git log -p` shows your router's whole history.
+
+**Privacy:** History snapshots hold the real configuration, including Wi-Fi passwords and VPN keys,
+because an undo needs them. They live under your user config dir (`owrt-tui/history/<router>/`),
+directory mode 0700, files 0600, and never leave your PC. The git export is masked.
+
+## Health (phase 5)
+
+The Health screen (tab, or `:` then "Go to Health") checks the configuration and a few read-only runtime
+facts and lists problems. `f` stages the fix as ordinary changes, so it still goes through preflight,
+rollback and smart confirm. Fixes are only offered when they are safe: a guest zone is tightened only
+if DHCP and DNS rules for it exist, and SSH passwords are turned off only if a key is installed.
+Checks: duplicate list entries, an interface in two zones, a guest zone that can reach the router,
+admin ports open to the internet, missing Wi-Fi country code, SSH password login, flash space, frequent
+cron jobs writing to flash (credentials in cron lines are masked), enabled-but-stopped services.
+Screens past the ninth have no number key; `0` opens the tenth, and `tab` or the palette reach the rest.
+
+## Clients (phase 6)
+
+One list of every device: DHCP leases, neighbour table, Wi-Fi stations (signal, traffic, time connected),
+static reservations, block rules and routing policy merged by MAC address. Keys: `n` name, `s` make
+static, `b` block/unblock (a firewall rule named `owrt_block_<mac>`; the device can still reach the
+router), `v` route through the VPN or WAN (needs pbr; creates policy `owrt_route_<mac>`), `k` kick from
+Wi-Fi, `w` wake-on-LAN (needs `etherwake` on the router). Name/static/block/route are staged changes;
+kick and wake are immediate and confirmed.

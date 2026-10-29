@@ -12,6 +12,7 @@ import (
 	"github.com/madushakv/owrt-tui/internal/changes"
 	"github.com/madushakv/owrt-tui/internal/uci"
 	"github.com/madushakv/owrt-tui/internal/validate"
+	"github.com/madushakv/owrt-tui/internal/wificaps"
 )
 
 type wifiScreen struct {
@@ -22,6 +23,7 @@ type wifiScreen struct {
 	err     error
 	form    *form
 	edit    uci.Section
+	caps    wificaps.Caps // what the radios can do; empty when the router has no iw
 }
 
 func newWifi(e *env) *wifiScreen { return &wifiScreen{e: e, loading: true} }
@@ -36,24 +38,27 @@ func (w *wifiScreen) Keys() string {
 }
 
 type wifiMsg struct {
-	cfg uci.Config
-	err error
+	cfg  uci.Config
+	caps wificaps.Caps
+	err  error
 }
 
 func (w *wifiScreen) Init() tea.Cmd { return w.load() }
 
 func (w *wifiScreen) load() tea.Cmd {
 	return w.e.call(func(ctx context.Context) tea.Msg {
-		all, err := w.e.S.LoadUCI(ctx)
+		all, err := w.e.loadUCI(ctx)
 		if err != nil {
 			return wifiMsg{err: err}
 		}
+		// Capabilities are a nicety: without them the forms fall back to generic checks.
+		caps, _ := w.e.S.WifiCaps(ctx)
 		for _, c := range all {
 			if c.Name == "wireless" {
-				return wifiMsg{cfg: c}
+				return wifiMsg{cfg: c, caps: caps}
 			}
 		}
-		return wifiMsg{} // no wireless config: a router without Wi-Fi
+		return wifiMsg{caps: caps} // no wireless config: a router without Wi-Fi
 	})
 }
 
@@ -62,7 +67,7 @@ func (w *wifiScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 	case wifiMsg:
 		w.loading, w.err = false, m.err
 		if m.err == nil {
-			w.cfg = m.cfg
+			w.cfg, w.caps = m.cfg, m.caps
 			w.cur = clampInt(w.cur, 0, len(w.rows())-1)
 		}
 	case uciChangedMsg:
@@ -134,6 +139,7 @@ func (w *wifiScreen) key(m tea.KeyPressMsg) (screen, tea.Cmd) {
 	case "down", "j":
 		w.cur = clampInt(w.cur+1, 0, len(w.rows())-1)
 	case "g":
+		w.e.invalidate()
 		return w, w.load()
 	case "enter", "e":
 		if s, ok := w.selected(); ok {
@@ -164,38 +170,7 @@ func (w *wifiScreen) open(s uci.Section) (screen, tea.Cmd) {
 	}
 	w.edit = s
 	if s.Type == "wifi-device" {
-		ht := []string{"HT20", "HT40"}
-		if opt(s, "band") == "5g" || opt(s, "band") == "6g" {
-			ht = []string{"VHT20", "VHT40", "VHT80", "VHT160", "HE20", "HE40", "HE80", "HE160"}
-		}
-		w.form = newForm("Radio "+s.Name+" ("+opt(s, "band")+")",
-			&field{Label: "Channel", Key: "channel", Value: opt(s, "channel"), Required: true, Hint: "a channel number, or auto",
-				Validate: func(v string) error {
-					if v == "auto" {
-						return nil
-					}
-					if err := validate.Channel(v); err != nil {
-						return err
-					}
-					n, _ := strconv.Atoi(v)
-					if band := opt(s, "band"); band == "2g" && n > 14 {
-						return fmt.Errorf("2.4 GHz channels are 1 to 14")
-					} else if band == "5g" && (n < 32 || n > 177) {
-						return fmt.Errorf("5 GHz channels are 32 to 177")
-					}
-					return nil
-				}},
-			&field{Label: "Width / mode", Key: "htmode", Kind: kChoice, Value: opt(s, "htmode"), Choices: choices(opt(s, "htmode"), ht...), Hint: "wider is faster but needs a quiet band"},
-			&field{Label: "Country", Key: "country", Value: opt(s, "country"), Hint: "two letters, e.g. LK; sets the legal channels and power",
-				Validate: func(v string) error {
-					if !countryRe.MatchString(v) {
-						return fmt.Errorf("two capital letters, e.g. LK")
-					}
-					return nil
-				}},
-			&field{Label: "Radio off", Key: "disabled", Kind: kBool, Value: opt(s, "disabled"), Hint: "turns off every network on this radio"},
-		)
-		return w, nil
+		return w.openRadio(s)
 	}
 	_, hasKey := s.Option("key")
 	f := newForm("Network "+opt(s, "ssid"),
@@ -303,4 +278,103 @@ func (w *wifiScreen) View(width, h int) string {
 		}
 	}
 	return b.String()
+}
+
+// openRadio builds the radio form from what the hardware reports.
+func (w *wifiScreen) openRadio(s uci.Section) (screen, tea.Cmd) {
+	var band wificaps.Band
+	known := false
+	if phy, ok := w.caps.For(s.Name, opt(s, "path")); ok {
+		band, known = phy.Band(opt(s, "band"))
+	}
+	ht := []string{"HT20", "HT40"}
+	if opt(s, "band") == "5g" || opt(s, "band") == "6g" {
+		ht = []string{"VHT20", "VHT40", "VHT80"}
+	}
+	chHint := "a channel number, or auto"
+	if known {
+		ht = band.HTModes()
+		step := 1
+		if band.Name != "2g" {
+			step = 4
+		}
+		chHint = "auto, or " + compactChannels(band.Allowed(), step)
+		if nc := band.NeedCountry(); len(nc) > 0 {
+			chHint += "; " + compactChannels(nc, step) + " need a country code"
+		}
+	}
+	ctryHint := "two letters, e.g. LK; sets the legal channels and power"
+	if c := w.caps.Country; c == "00" {
+		ctryHint = "not set: the router uses the restrictive world region. " + ctryHint
+	} else if c != "" {
+		ctryHint = "in force now: " + c + ". " + ctryHint
+	}
+	w.form = newForm("Radio "+s.Name+" ("+opt(s, "band")+")",
+		&field{Label: "Channel", Key: "channel", Value: opt(s, "channel"), Required: true, Hint: chHint,
+			Validate: func(v string) error { return w.checkChannel(s, band, known, v) }},
+		&field{Label: "Width / mode", Key: "htmode", Kind: kChoice, Value: opt(s, "htmode"), Choices: choices(opt(s, "htmode"), ht...), Hint: "wider is faster but needs a quiet band"},
+		&field{Label: "Country", Key: "country", Value: opt(s, "country"), Hint: ctryHint,
+			Validate: func(v string) error {
+				if !countryRe.MatchString(v) {
+					return fmt.Errorf("two capital letters, e.g. LK")
+				}
+				return nil
+			}},
+		&field{Label: "Radio off", Key: "disabled", Kind: kBool, Value: opt(s, "disabled"), Hint: "turns off every network on this radio"},
+	)
+	return w, nil
+}
+
+func (w *wifiScreen) checkChannel(s uci.Section, band wificaps.Band, known bool, v string) error {
+	if v == "auto" {
+		return nil
+	}
+	if err := validate.Channel(v); err != nil {
+		return err
+	}
+	n, _ := strconv.Atoi(v)
+	if !known { // no capability data: generic limits per band
+		switch b := opt(s, "band"); {
+		case b == "2g" && n > 14:
+			return fmt.Errorf("2.4 GHz channels are 1 to 14")
+		case b == "5g" && (n < 32 || n > 177):
+			return fmt.Errorf("5 GHz channels are 32 to 177")
+		}
+		return nil
+	}
+	c, ok := band.Channel(n)
+	switch {
+	case !ok:
+		return fmt.Errorf("this radio has no channel %d", n)
+	case c.Disabled:
+		return fmt.Errorf("channel %d is disabled in this region", n)
+	case c.NeedsCountry():
+		return fmt.Errorf("channel %d is locked until a country is set (apply the country first)", n)
+	}
+	return nil
+}
+
+// compactChannels writes channel numbers as ranges: "36-48, 100-144".
+func compactChannels(nums []int, step int) string {
+	if len(nums) == 0 {
+		return "none"
+	}
+	var parts []string
+	start, prev := nums[0], nums[0]
+	flush := func() {
+		if start == prev {
+			parts = append(parts, strconv.Itoa(start))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d-%d", start, prev))
+		}
+	}
+	for _, n := range nums[1:] {
+		if n-prev > step {
+			flush()
+			start = n
+		}
+		prev = n
+	}
+	flush()
+	return strings.Join(parts, ", ")
 }

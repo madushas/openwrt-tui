@@ -318,7 +318,7 @@ func TestPaletteThemeSwitchIsPersistedAndApplied(t *testing.T) {
 
 func TestPaletteOffersServiceActionsAndAsksBeforeRunning(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "Services")) // services; wait for the list
+	openTab(t, a, "Services") // services; wait for the list
 	scr(a, "Services").(*servicesScreen).Update(servicesMsg{list: []services.Service{{Name: "dropbear", Enabled: true, State: services.Running}}})
 	press(t, a, ":")
 	for _, r := range "restart dropbear" {

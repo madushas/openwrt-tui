@@ -83,7 +83,7 @@ func (d *dhcpScreen) Init() tea.Cmd { return d.load() }
 
 func (d *dhcpScreen) load() tea.Cmd {
 	return d.e.call(func(ctx context.Context) tea.Msg {
-		all, err := d.e.S.LoadUCI(ctx)
+		all, err := d.e.loadUCI(ctx)
 		if err != nil {
 			return dhcpMsg{err: err}
 		}
@@ -180,6 +180,7 @@ func (d *dhcpScreen) key(m tea.KeyPressMsg) (screen, tea.Cmd) {
 	case "down", "j":
 		d.cur = clampInt(d.cur+1, 0, len(d.rows())-1)
 	case "g":
+		d.e.invalidate()
 		return d, d.load()
 	case "enter", "e":
 		r, ok := d.selected()

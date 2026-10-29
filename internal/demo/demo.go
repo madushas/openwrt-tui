@@ -92,6 +92,30 @@ config host
 	option name 'printer'
 	option mac 'aa:bb:cc:00:00:04'
 	option ip '192.168.1.60'
+
+package dropbear
+
+config dropbear
+	option Port '22'
+
+package firewall
+
+config zone
+	option name 'lan'
+	option input 'ACCEPT'
+	list network 'lan'
+
+config zone
+	option name 'wan'
+	option input 'REJECT'
+	list network 'wan'
+	list network 'wan'
+	list network 'wan'
+
+config zone
+	option name 'guest'
+	option input 'ACCEPT'
+	list network 'guest'
 `
 
 const services = `svc dnsmasq 1 19
@@ -138,6 +162,13 @@ round-trip min/avg/max = 9.1/9.6/10.4 ms
 func Router() *transport.Fake {
 	return (&transport.Fake{Name: "demo"}).
 		OnFunc("##owrt-metrics", metricsGen()).
+		On("##owrt-wifi-caps", wifiCaps).
+		On("##overlay", "##overlay\noverlayfs:/overlay 14000 6000 7000 46% /overlay\n##release\n25.12.3\n##sshkeys\n1\n##cron\n0 4 * * * reboot\n*/15 * * * * /usr/bin/ddns_update.sh >> /root/ddns.log 2>&1\n").
+		On("##leases", "##leases\n1790000000 aa:bb:cc:00:00:01 192.168.1.50 pixel-8 01:aa\n1790000000 aa:bb:cc:00:00:02 192.168.1.51 laptop *\n1790000000 aa:bb:cc:00:00:04 192.168.1.60 printer *\n##neigh\n192.168.1.50 dev br-lan lladdr aa:bb:cc:00:00:01 REACHABLE\n192.168.1.51 dev br-lan lladdr aa:bb:cc:00:00:02 STALE\n192.168.1.60 dev br-lan lladdr aa:bb:cc:00:00:04 REACHABLE\n##sta phy0-ap0\nStation aa:bb:cc:00:00:01 (on phy0-ap0)\n\tinactive time:\t40 ms\n\trx bytes:\t5123456\n\ttx bytes:\t90654321\n\tsignal:  \t-52 [-52] dBm\n\tconnected time:\t3600 seconds\n").
+		On("ubus call hostapd.", "").
+		On("etherwake", "").
+		On(".confirm", "confirmed\n").
+		On("##owrt-postcheck", "##owrt-postcheck\ndefault_route=ok\ngateway=ok\ndns=ok\nwg_wg0=40\nproc_dnsmasq=ok\nproc_dropbear=ok\n").
 		On("ubus call system board", probe).
 		On("uci export", uciExport).
 		On("ubus call service list", services).
@@ -254,4 +285,35 @@ AA:BB:CC:00:00:01  -48 dBm / -95 dBm (SNR 47)  80 ms ago
 AA:BB:CC:00:00:02  -63 dBm / -95 dBm (SNR 32)  120 ms ago
 AA:BB:CC:00:00:03  -74 dBm / -95 dBm (SNR 21)  300 ms ago
 ##end
+`
+
+// wifiCaps is "iw phy info" for a small dual-band router: 2.4 GHz HT only, and
+// 5 GHz up to VHT80 with the high channels locked until a country is set.
+const wifiCaps = `##phy phy0 /sys/devices/platform/soc/radio0
+Wiphy phy0
+	Band 1:
+		Capabilities: 0x1fe
+			HT20/HT40
+		Frequencies:
+			* 2412.0 MHz [1] (20.0 dBm)
+			* 2437.0 MHz [6] (20.0 dBm)
+			* 2462.0 MHz [11] (20.0 dBm)
+			* 2467.0 MHz [12] (20.0 dBm) (no IR)
+			* 2472.0 MHz [13] (20.0 dBm) (no IR)
+##phy phy1 /sys/devices/platform/soc/radio1
+Wiphy phy1
+	Band 2:
+		Capabilities: 0x1ff
+			HT20/HT40
+		VHT Capabilities (0x318001b0):
+			Supported Channel Width: neither 160 nor 80+80
+		Frequencies:
+			* 5180.0 MHz [36] (20.0 dBm)
+			* 5200.0 MHz [40] (20.0 dBm)
+			* 5260.0 MHz [52] (20.0 dBm) (no IR, radar detection)
+			* 5745.0 MHz [149] (20.0 dBm) (no IR)
+			* 5845.0 MHz [169] (disabled)
+##reg
+global
+country 00: DFS-UNSET
 `

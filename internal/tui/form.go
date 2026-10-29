@@ -245,3 +245,28 @@ func (f *form) View(w, h int) string {
 	b.WriteString("\n  " + sDim.Render("enter edit/toggle   s stage changes   esc cancel   ● = changed") + "\n")
 	return fitLines(b.String(), w, h)
 }
+
+// listify rewrites edits of list-valued options ("dns") as delete + add_list,
+// because "uci set" on a list would turn it into a plain option.
+func listify(in []changes.Change, listKeys ...string) []changes.Change {
+	isList := map[string]bool{}
+	for _, k := range listKeys {
+		isList[k] = true
+	}
+	var out []changes.Change
+	for _, c := range in {
+		if !isList[c.Option] || (c.Op != changes.OpSet && c.Op != changes.OpDelete) {
+			out = append(out, c)
+			continue
+		}
+		if c.Old != "" {
+			out = append(out, changes.Change{Op: changes.OpDelete, Config: c.Config, Section: c.Section, Option: c.Option, Old: c.Old})
+		}
+		if c.Op == changes.OpSet {
+			for _, v := range strings.Fields(c.Value) {
+				out = append(out, changes.Change{Op: changes.OpAddList, Config: c.Config, Section: c.Section, Option: c.Option, Value: v})
+			}
+		}
+	}
+	return out
+}
