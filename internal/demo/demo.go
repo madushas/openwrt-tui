@@ -92,6 +92,30 @@ config host
 	option name 'printer'
 	option mac 'aa:bb:cc:00:00:04'
 	option ip '192.168.1.60'
+
+package dropbear
+
+config dropbear
+	option Port '22'
+
+package firewall
+
+config zone
+	option name 'lan'
+	option input 'ACCEPT'
+	list network 'lan'
+
+config zone
+	option name 'wan'
+	option input 'REJECT'
+	list network 'wan'
+	list network 'wan'
+	list network 'wan'
+
+config zone
+	option name 'guest'
+	option input 'ACCEPT'
+	list network 'guest'
 `
 
 const services = `svc dnsmasq 1 19
@@ -139,6 +163,12 @@ func Router() *transport.Fake {
 	return (&transport.Fake{Name: "demo"}).
 		OnFunc("##owrt-metrics", metricsGen()).
 		On("##owrt-wifi-caps", wifiCaps).
+		On("##overlay", "##overlay\noverlayfs:/overlay 14000 6000 7000 46% /overlay\n##release\n25.12.3\n##sshkeys\n1\n##cron\n0 4 * * * reboot\n*/15 * * * * /usr/bin/ddns_update.sh >> /root/ddns.log 2>&1\n").
+		On("##leases", "##leases\n1790000000 aa:bb:cc:00:00:01 192.168.1.50 pixel-8 01:aa\n1790000000 aa:bb:cc:00:00:02 192.168.1.51 laptop *\n1790000000 aa:bb:cc:00:00:04 192.168.1.60 printer *\n##neigh\n192.168.1.50 dev br-lan lladdr aa:bb:cc:00:00:01 REACHABLE\n192.168.1.51 dev br-lan lladdr aa:bb:cc:00:00:02 STALE\n192.168.1.60 dev br-lan lladdr aa:bb:cc:00:00:04 REACHABLE\n##sta phy0-ap0\nStation aa:bb:cc:00:00:01 (on phy0-ap0)\n\tinactive time:\t40 ms\n\trx bytes:\t5123456\n\ttx bytes:\t90654321\n\tsignal:  \t-52 [-52] dBm\n\tconnected time:\t3600 seconds\n").
+		On("ubus call hostapd.", "").
+		On("etherwake", "").
+		On(".confirm", "confirmed\n").
+		On("##owrt-postcheck", "##owrt-postcheck\ndefault_route=ok\ngateway=ok\ndns=ok\nwg_wg0=40\nproc_dnsmasq=ok\nproc_dropbear=ok\n").
 		On("ubus call system board", probe).
 		On("uci export", uciExport).
 		On("ubus call service list", services).

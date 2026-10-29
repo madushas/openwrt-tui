@@ -28,7 +28,7 @@ func typeText(t *testing.T, a *App, s string) {
 
 func TestDHCPListsPoolsAndStaticLeases(t *testing.T) {
 	a := newApp(t, true)
-	press(t, a, tab(a, "DHCP"))
+	openTab(t, a, "DHCP")
 	v := plain(a.render())
 	for _, want := range []string{"POOL", "lan", "STATIC", "printer", "aa:bb:cc:00:00:04", "ACTIVE", "macbook-pro"} {
 		if !strings.Contains(v, want) {
@@ -61,7 +61,7 @@ func selectRow(t *testing.T, d *dhcpScreen, kind dhcpKind, contains string) {
 
 func TestMakeActiveLeaseStatic(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "DHCP"))
+	openTab(t, a, "DHCP")
 	d := dhcpOf(t, a)
 	selectRow(t, d, rowActive, "pixel-8")
 	press(t, a, "s")
@@ -126,7 +126,7 @@ func TestStaticLeaseRejectsBadAndDuplicateInput(t *testing.T) {
 
 func TestEditPoolStagesOnlyChangedOptions(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "DHCP"))
+	openTab(t, a, "DHCP")
 	d := dhcpOf(t, a)
 	selectRow(t, d, rowPool, "lan")
 	press(t, a, "enter")
@@ -147,7 +147,7 @@ func TestEditPoolStagesOnlyChangedOptions(t *testing.T) {
 
 func TestPoolRejectsBadLeaseTime(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "DHCP"))
+	openTab(t, a, "DHCP")
 	d := dhcpOf(t, a)
 	selectRow(t, d, rowPool, "lan")
 	press(t, a, "enter", "down", "down", "enter")
@@ -163,7 +163,7 @@ func TestPoolRejectsBadLeaseTime(t *testing.T) {
 
 func TestDeleteStaticLease(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "DHCP"))
+	openTab(t, a, "DHCP")
 	d := dhcpOf(t, a)
 	selectRow(t, d, rowStatic, "printer")
 	press(t, a, "d")
@@ -221,7 +221,7 @@ func TestRealRouterListMacReservations(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := newApp(t, false)
-	press(t, a, tab(a, "DHCP"))
+	openTab(t, a, "DHCP")
 	d := dhcpOf(t, a)
 	d.cfg, d.leases = cfgs[0], nil
 	if v := plain(a.render()); !strings.Contains(v, "(no name)") || !strings.Contains(v, "64:82:14:47:41:0F") {

@@ -37,6 +37,7 @@ var TUI func(ctx context.Context, s *session.Session, timeout time.Duration) err
 type TUIOpts struct {
 	Target, Identity, Port string
 	Write                  bool
+	ExportDir              string
 	Timeout                time.Duration
 }
 
@@ -47,6 +48,7 @@ var TUIConnect func(ctx context.Context, o TUIOpts) error
 type globals struct {
 	target, identity, port string
 	demo, write            bool
+	exportDir              string
 	timeout                time.Duration
 }
 
@@ -92,6 +94,7 @@ func Run(args []string, out, errw io.Writer) int {
 	fs.StringVar(&g.target, "target", os.Getenv("OWRT_HOST"), "router as ssh sees it: user@host or a Host alias from ~/.ssh/config (env OWRT_HOST)")
 	fs.StringVar(&g.identity, "i", "", "ssh identity file")
 	fs.StringVar(&g.port, "p", "", "ssh port")
+	fs.StringVar(&g.exportDir, "export-dir", "", "tui only: git repository to record the masked configuration in after every apply")
 	fs.BoolVar(&g.write, "write", false, "tui only: allow changes (default is read-only)")
 	fs.BoolVar(&g.demo, "demo", false, "use a built-in fake router instead of connecting")
 	fs.DurationVar(&g.timeout, "timeout", 30*time.Second, "per-command timeout")
@@ -147,7 +150,7 @@ func runTUI(g globals, errw io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if !g.demo && TUIConnect != nil {
-		return report(errw, TUIConnect(ctx, TUIOpts{Target: g.target, Identity: g.identity, Port: g.port, Write: g.write, Timeout: g.timeout}))
+		return report(errw, TUIConnect(ctx, TUIOpts{Target: g.target, Identity: g.identity, Port: g.port, Write: g.write, ExportDir: g.exportDir, Timeout: g.timeout}))
 	}
 	if TUI == nil {
 		return report(errw, usageError("the terminal UI is not available in this build"))
@@ -203,7 +206,7 @@ func (g globals) transport() (transport.Transport, error) {
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "owrt-tui: inspect an OpenWrt router over ssh (read-only)")
-	fmt.Fprintln(w, "\nusage: owrt-tui [-target user@host] [-i key] [-p port] [-demo] [-write] [-timeout 30s] [command] [args]\n       (no command, or tui, opens the terminal UI; it is read-only unless -write is given)")
+	fmt.Fprintln(w, "\nusage: owrt-tui [-target user@host] [-i key] [-p port] [-demo] [-write] [-export-dir dir] [-timeout 30s] [command] [args]\n       (no command, or tui, opens the terminal UI; it is read-only unless -write is given)")
 	fmt.Fprintln(w, "\ncommands:")
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, c := range commands {

@@ -25,7 +25,7 @@ func selectSSID(t *testing.T, w *wifiScreen, ssid string) {
 
 func TestWifiListsRadiosAndNetworks(t *testing.T) {
 	a := newApp(t, true)
-	press(t, a, tab(a, "Wi-Fi"))
+	openTab(t, a, "Wi-Fi")
 	v := plain(a.render())
 	for _, want := range []string{"RADIO", "radio0", "2g", "HT20", "SSID", "HomeNet", "sae-mixed"} {
 		if !strings.Contains(v, want) {
@@ -47,7 +47,7 @@ func TestWifiReadOnlyStagesNothing(t *testing.T) {
 
 func TestWifiRenameKeepsPasswordUntouched(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "Wi-Fi"))
+	openTab(t, a, "Wi-Fi")
 	w := wifiOf(t, a)
 	selectSSID(t, w, "HomeNet")
 	press(t, a, "enter")
@@ -64,7 +64,7 @@ func TestWifiRenameKeepsPasswordUntouched(t *testing.T) {
 
 func TestWifiPasswordNeverShownOrLeaked(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "Wi-Fi"))
+	openTab(t, a, "Wi-Fi")
 	w := wifiOf(t, a)
 	selectSSID(t, w, "HomeNet")
 	press(t, a, "enter", "down", "down", "enter") // password field
@@ -85,7 +85,7 @@ func TestWifiPasswordNeverShownOrLeaked(t *testing.T) {
 	if c.Option != "key" || c.Value != pw || c.Old != "" {
 		t.Fatalf("unexpected change %+v (old value must stay out of the diff)", c)
 	}
-	press(t, a, tab(a, "Changes"))
+	openTab(t, a, "Changes")
 	if v := plain(a.render()); strings.Contains(v, pw) || strings.Contains(v, "demo-wifi-passphrase") {
 		t.Fatalf("password leaked on the Changes screen:\n%s", v)
 	}
@@ -96,7 +96,7 @@ func TestWifiPasswordNeverShownOrLeaked(t *testing.T) {
 
 func TestWifiRejectsShortPasswordAndMissingKey(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "Wi-Fi"))
+	openTab(t, a, "Wi-Fi")
 	w := wifiOf(t, a)
 	selectSSID(t, w, "HomeNet")
 	press(t, a, "enter")
@@ -147,7 +147,7 @@ func TestWifiRadioFormValidates(t *testing.T) {
 
 func TestWifiToggleDisable(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "Wi-Fi"))
+	openTab(t, a, "Wi-Fi")
 	w := wifiOf(t, a)
 	selectSSID(t, w, "HomeNet")
 	press(t, a, "t")
@@ -188,7 +188,7 @@ func realCapsApp(t *testing.T) (*App, *wifiScreen) {
 	a := newApp(t, false)
 	w := wifiOf(t, a)
 	w.cfg, w.caps = cfgs[0], wificaps.Parse(string(b))
-	press(t, a, tab(a, "Wi-Fi"))
+	openTab(t, a, "Wi-Fi")
 	return a, w
 }
 

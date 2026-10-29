@@ -13,6 +13,7 @@ import (
 func main() {
 	cli.TUI = tui.Run // used with -demo
 	cli.TUIConnect = func(ctx context.Context, o cli.TUIOpts) error {
+		tui.ExportDir = o.ExportDir
 		return tui.RunConnect(ctx, tui.ConnectOpts{
 			Target: o.Target, Identity: o.Identity, Port: o.Port, Write: o.Write, Timeout: o.Timeout,
 		})

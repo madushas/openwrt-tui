@@ -49,7 +49,7 @@ type borderless interface{ Borderless() bool }
 type detailer interface{ Detail(w, h int) string }
 
 var icons = map[string]string{
-	"Dashboard": "◈", "Config": "≡", "Changes": "±", "Services": "▣",
+	"Dashboard": "◈", "Config": "≡", "Changes": "±", "History": "↶", "Health": "♥", "Clients": "☰", "Services": "▣",
 	"Logs": "▤", "Packages": "▥", "Diagnostics": "◎",
 }
 
@@ -75,10 +75,14 @@ func New(ctx context.Context, s *session.Session, timeout time.Duration) *App {
 	a.theme = applyTheme(loadThemeFn()).Name
 	a.screens = []screen{
 		newDashboard(e),
+		newNetwork(e),
 		newWifi(e),
 		newDHCP(e),
+		newClients(e),
+		newHealth(e),
 		newUCI(e),
 		newChanges(e),
+		newHistory(e),
 		newServices(e),
 		newLogs(e),
 		newPackages(e),
@@ -92,6 +96,7 @@ func (a *App) Init() tea.Cmd {
 	for _, s := range a.screens {
 		cmds = append(cmds, s.Init())
 	}
+	cmds = append(cmds, a.env.checkDrift())
 	if ac, ok := a.screens[a.active].(activator); ok {
 		cmds = append(cmds, ac.SetActive(true))
 	}
@@ -99,6 +104,17 @@ func (a *App) Init() tea.Cmd {
 }
 
 type toastExpireMsg int
+
+// numKey is the key that opens the i-th screen; later screens use tab or the palette.
+func numKey(i int) string {
+	switch {
+	case i < 9:
+		return strconv.Itoa(i + 1)
+	case i == 9:
+		return "0"
+	}
+	return "-"
+}
 
 func (a *App) goTo(i int) tea.Cmd {
 	if i < 0 || i >= len(a.screens) || i == a.active {
@@ -149,6 +165,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.screens[a.active] = ns
 		return a, cmd
 	}
+	if g, ok := msg.(gotoMsg); ok {
+		for i, s := range a.screens {
+			if s.Title() == g.title {
+				return a, a.goTo(i)
+			}
+		}
+		return a, nil
+	}
+	var extra tea.Cmd
+	if _, ok := msg.(uciChangedMsg); ok {
+		a.env.invalidate() // before any screen reloads, so they all see fresh data
+		extra = a.env.syncState()
+	}
 	// Results of background work go to every screen; each ignores types it
 	// does not own, so a reply is not lost when the user switched tabs.
 	var cmds []tea.Cmd
@@ -157,7 +186,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.screens[i] = ns
 		cmds = append(cmds, cmd)
 	}
-	return a, tea.Batch(cmds...)
+	return a, tea.Batch(append(cmds, extra)...)
 }
 
 // full is the layout with the Menu sidebar; narrower terminals get a tab bar so
@@ -239,8 +268,12 @@ func (a *App) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "shift+tab":
 			return a, a.goTo((a.active + len(a.screens) - 1) % len(a.screens))
 		}
-		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
-			if i := int(s[0] - '1'); i < len(a.screens) {
+		if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
+			i := int(s[0] - '1') // "0" is the tenth screen
+			if s[0] == '0' {
+				i = 9
+			}
+			if i < len(a.screens) {
 				return a, a.goTo(i)
 			}
 		}
@@ -256,7 +289,7 @@ func (a *App) paletteItems() []paletteItem {
 	var items []paletteItem
 	for i, s := range a.screens {
 		i := i
-		items = append(items, paletteItem{Title: "Go to " + s.Title(), Hint: strconv.Itoa(i + 1), Run: func() tea.Cmd { return a.goTo(i) }})
+		items = append(items, paletteItem{Title: "Go to " + s.Title(), Hint: numKey(i), Run: func() tea.Cmd { return a.goTo(i) }})
 	}
 	for i, s := range a.screens {
 		c, ok := s.(commander)
@@ -313,7 +346,7 @@ func (a *App) View() tea.View {
 func (a *App) tabLabels() []string {
 	var out []string
 	for i, s := range a.screens {
-		t := fmt.Sprintf("%d %s", i+1, s.Title())
+		t := fmt.Sprintf("%s %s", numKey(i), s.Title())
 		if _, ok := s.(*changesScreen); ok && a.env.Staged.Len() > 0 {
 			t += fmt.Sprintf(" (%d)", a.env.Staged.Len())
 		}
@@ -439,7 +472,7 @@ func (a *App) renderCompact() string {
 func (a *App) sidebar(w, h int) string {
 	var lines []string
 	for i, s := range a.screens {
-		label := fmt.Sprintf(" %s %d %s", icons[s.Title()], i+1, s.Title())
+		label := fmt.Sprintf(" %s %s %s", icons[s.Title()], numKey(i), s.Title())
 		if _, ok := s.(*changesScreen); ok && a.env.Staged.Len() > 0 {
 			label += fmt.Sprintf(" (%d)", a.env.Staged.Len())
 		}

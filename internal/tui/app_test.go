@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +49,7 @@ func idx(a *App, title string) int {
 }
 
 // tab is the key that opens the titled screen.
-func tab(a *App, title string) string { return strconv.Itoa(idx(a, title) + 1) }
+func tab(a *App, title string) string { return numKey(idx(a, title)) }
 
 func scr(a *App, title string) screen { return a.screens[idx(a, title)] }
 
@@ -96,19 +95,19 @@ func TestScreensShowDemoData(t *testing.T) {
 	if v := view(a); !strings.Contains(v, "gw-demo") {
 		t.Fatalf("overview missing hostname:\n%s", v)
 	}
-	press(t, a, tab(a, "Config"))
+	openTab(t, a, "Config")
 	if v := view(a); !strings.Contains(v, "network") || !strings.Contains(v, "wireless") {
 		t.Fatalf("config screen missing configs:\n%s", v)
 	}
-	press(t, a, tab(a, "Services"))
+	openTab(t, a, "Services")
 	if v := view(a); !strings.Contains(v, "dropbear") {
 		t.Fatalf("services screen missing dropbear:\n%s", v)
 	}
-	press(t, a, tab(a, "Logs"))
+	openTab(t, a, "Logs")
 	if v := view(a); !strings.Contains(v, "daemon") && !strings.Contains(v, "level") {
 		t.Fatalf("logs screen empty:\n%s", v)
 	}
-	press(t, a, tab(a, "Packages"))
+	openTab(t, a, "Packages")
 	if v := view(a); !strings.Contains(v, "installed") {
 		t.Fatalf("packages screen empty:\n%s", v)
 	}
@@ -195,7 +194,7 @@ func TestStagedSecretIsMaskedOnChangesScreen(t *testing.T) {
 	if a.env.Staged.Len() != 1 {
 		t.Fatalf("staged %d changes, want 1", a.env.Staged.Len())
 	}
-	press(t, a, tab(a, "Changes"))
+	openTab(t, a, "Changes")
 	v := view(a)
 	if strings.Contains(v, "NEWsecret") || strings.Contains(v, "DEMOdemo") {
 		t.Fatalf("secret leaked on the changes screen:\n%s", v)
@@ -231,4 +230,11 @@ func TestQuitKey(t *testing.T) {
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Fatal("q produced no QuitMsg")
 	}
+}
+
+// openTab switches to the titled screen like the user would, even when it is
+// past the ninth (which has no number key).
+func openTab(t *testing.T, a *App, title string) {
+	t.Helper()
+	pump(t, a, a.goTo(idx(a, title)))
 }

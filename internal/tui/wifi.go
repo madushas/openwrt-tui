@@ -47,7 +47,7 @@ func (w *wifiScreen) Init() tea.Cmd { return w.load() }
 
 func (w *wifiScreen) load() tea.Cmd {
 	return w.e.call(func(ctx context.Context) tea.Msg {
-		all, err := w.e.S.LoadUCI(ctx)
+		all, err := w.e.loadUCI(ctx)
 		if err != nil {
 			return wifiMsg{err: err}
 		}
@@ -139,6 +139,7 @@ func (w *wifiScreen) key(m tea.KeyPressMsg) (screen, tea.Cmd) {
 	case "down", "j":
 		w.cur = clampInt(w.cur+1, 0, len(w.rows())-1)
 	case "g":
+		w.e.invalidate()
 		return w, w.load()
 	case "enter", "e":
 		if s, ok := w.selected(); ok {
