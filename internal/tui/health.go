@@ -52,6 +52,17 @@ func (h *healthScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 	switch m := msg.(type) {
 	case healthMsg:
 		h.loading, h.err, h.list = false, m.err, m.list
+		if m.err == nil {
+			h.e.alertBad, h.e.alertWarn = 0, 0
+			for _, f := range m.list {
+				switch f.Sev {
+				case health.Bad:
+					h.e.alertBad++
+				case health.Warn:
+					h.e.alertWarn++
+				}
+			}
+		}
 		h.cur = clampInt(h.cur, 0, len(h.list)-1)
 	case uciChangedMsg:
 		return h, h.load()

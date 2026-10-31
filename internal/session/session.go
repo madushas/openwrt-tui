@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/madushakv/owrt-tui/internal/backup"
 	"github.com/madushakv/owrt-tui/internal/changes"
 	"github.com/madushakv/owrt-tui/internal/clients"
 	"github.com/madushakv/owrt-tui/internal/device"
@@ -19,6 +21,8 @@ import (
 	"github.com/madushakv/owrt-tui/internal/pkgmgr"
 	"github.com/madushakv/owrt-tui/internal/postcheck"
 	"github.com/madushakv/owrt-tui/internal/services"
+	"github.com/madushakv/owrt-tui/internal/shq"
+	"github.com/madushakv/owrt-tui/internal/traffic"
 	"github.com/madushakv/owrt-tui/internal/transport"
 	"github.com/madushakv/owrt-tui/internal/uci"
 	"github.com/madushakv/owrt-tui/internal/validate"
@@ -199,6 +203,16 @@ func (s *Session) HealthFacts(ctx context.Context) (health.Facts, error) {
 	return f, nil
 }
 
+// Traffic samples per-client byte counters from connection tracking. It only
+// reads.
+func (s *Session) Traffic(ctx context.Context) (traffic.Sample, error) {
+	res, err := transport.RunScript(ctx, s.T, traffic.Script)
+	if err != nil {
+		return traffic.Sample{}, err
+	}
+	return traffic.Parse(res.Stdout, time.Now()), nil
+}
+
 // Clients reads the raw per-device data. It only reads.
 func (s *Session) Clients(ctx context.Context) (clients.Raw, error) {
 	res, err := transport.RunScript(ctx, s.T, clients.Script)
@@ -240,6 +254,106 @@ func (s *Session) Wake(ctx context.Context, dev, mac string) error {
 		return fmt.Errorf("wake-on-LAN needs the etherwake package on the router (install it on the Packages screen)")
 	}
 	return fmt.Errorf("etherwake failed (exit %d): %s", res.ExitCode, strings.TrimSpace(res.Stderr))
+}
+
+// Crontab returns the root crontab (empty if there is none). It only reads.
+func (s *Session) Crontab(ctx context.Context) (string, error) {
+	res, err := s.T.Run(ctx, "crontab -l 2>/dev/null; exit 0", nil)
+	if err != nil {
+		return "", err
+	}
+	return res.Stdout, nil
+}
+
+// SetCrontab replaces the root crontab. The old one is kept on the router in
+// /tmp/owrt-tui, cron is enabled and restarted, and the result is read back.
+func (s *Session) SetCrontab(ctx context.Context, text string) error {
+	if err := s.requireWrite(); err != nil {
+		return err
+	}
+	if len(text) > 64<<10 || strings.ContainsRune(text, 0) {
+		return fmt.Errorf("crontab is too large or contains NUL bytes")
+	}
+	cmd := `mkdir -p /tmp/owrt-tui && crontab -l > /tmp/owrt-tui/crontab.$(date +%s) 2>/dev/null; crontab - && { [ ! -x /etc/init.d/cron ] || { /etc/init.d/cron enable; /etc/init.d/cron restart; }; }`
+	res, err := s.T.Run(ctx, cmd, strings.NewReader(text))
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("crontab failed (exit %d): %s", res.ExitCode, strings.TrimSpace(res.Stderr))
+	}
+	got, err := s.Crontab(ctx)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(got) != strings.TrimSpace(text) {
+		return fmt.Errorf("the router's crontab does not match what was sent; check it with crontab -l")
+	}
+	return nil
+}
+
+// ConfigBackup returns the router's configuration archive (sysupgrade -b).
+// It only reads, but the archive holds secrets: the caller must store it
+// privately.
+func (s *Session) ConfigBackup(ctx context.Context) ([]byte, error) {
+	res, err := s.T.Run(ctx, `f=/tmp/owrt-tui-backup.$$.tar.gz; sysupgrade -b "$f" >/dev/null 2>&1 && base64 "$f"; rc=$?; rm -f "$f"; exit $rc`, nil)
+	if err != nil {
+		return nil, err
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("sysupgrade -b failed (exit %d)", res.ExitCode)
+	}
+	return backup.Decode(res.Stdout)
+}
+
+var fwPathRe = regexp.MustCompile(`^/(tmp|root|home)/[A-Za-z0-9._/-]{1,150}$`)
+
+// FirmwareTest asks sysupgrade to validate an image already on the router
+// without flashing it.
+func (s *Session) FirmwareTest(ctx context.Context, path string) (string, error) {
+	if !fwPathRe.MatchString(path) || strings.Contains(path, "..") {
+		return "", fmt.Errorf("give the image's full path on the router, under /tmp, /root or /home")
+	}
+	res, err := s.T.Run(ctx, "sysupgrade -T "+shq.Quote(path)+" 2>&1; echo \"exit=$?\"", nil)
+	if err != nil {
+		return "", err
+	}
+	out := strings.TrimSpace(res.Stdout)
+	if !strings.HasSuffix(out, "exit=0") {
+		return out, fmt.Errorf("the image was rejected")
+	}
+	return out, nil
+}
+
+// PkgUpgradeAll upgrades every package. Only apk can do that in one safe,
+// all-or-nothing transaction; opkg users upgrade packages one at a time.
+func (s *Session) PkgUpgradeAll(ctx context.Context) (string, error) {
+	r, err := s.runner()
+	if err != nil {
+		return "", err
+	}
+	if err := s.requireWrite(); err != nil {
+		return "", err
+	}
+	if r.B.Name() != "apk" {
+		return "", fmt.Errorf("opkg cannot upgrade everything safely; upgrade packages one at a time on the Packages screen")
+	}
+	return r.Exec(ctx, "apk upgrade")
+}
+
+// Routes returns the live routing table (IPv4, then IPv6). It only reads.
+func (s *Session) Routes(ctx context.Context) ([]string, error) {
+	res, err := s.T.Run(ctx, "ip route show 2>/dev/null; ip -6 route show 2>/dev/null | head -n 30; exit 0", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, l := range strings.Split(res.Stdout, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
 
 // WifiCaps reads what each radio supports. It only reads, so it is allowed in

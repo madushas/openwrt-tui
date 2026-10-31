@@ -21,17 +21,37 @@ type netScreen struct {
 	err     error
 	form    *form
 	edit    uci.Section
+	adding  bool
+	// sub is 0 for the interface list, else 1+index into subs (bridges, routes, firewall...).
+	sub  int
+	subs []*secEditor
 }
 
-func newNetwork(e *env) *netScreen { return &netScreen{e: e, loading: true} }
+var netTabs = []string{"Interfaces", "Bridges", "VLANs", "Routes", "Zones", "Forwards", "Rules", "Port fwd"}
 
-func (n *netScreen) Title() string   { return "Network" }
-func (n *netScreen) Capturing() bool { return n.form != nil }
+func newNetwork(e *env) *netScreen {
+	n := &netScreen{e: e, loading: true}
+	for _, sp := range []secSpec{bridgeSpec(), vlanSpec(), routeSpec(), zoneSpec(), forwardingSpec(), ruleSpec(), redirectSpec()} {
+		n.subs = append(n.subs, newEditor(e, sp))
+	}
+	return n
+}
+
+func (n *netScreen) Title() string { return "Network" }
+func (n *netScreen) Capturing() bool {
+	if n.sub > 0 {
+		return n.subs[n.sub-1].Capturing()
+	}
+	return n.form != nil
+}
 func (n *netScreen) Keys() string {
+	if n.sub > 0 {
+		return n.subs[n.sub-1].Keys() + "  [ ] section"
+	}
 	if n.form != nil {
 		return "enter edit  s stage  esc cancel"
 	}
-	return "enter edit (static and DHCP)  g reload"
+	return "enter edit  n new interface  d delete  g reload  [ ] section"
 }
 
 type netMsg struct {
@@ -40,7 +60,13 @@ type netMsg struct {
 	err  error
 }
 
-func (n *netScreen) Init() tea.Cmd { return n.load() }
+func (n *netScreen) Init() tea.Cmd {
+	cmds := []tea.Cmd{n.load()}
+	for _, sub := range n.subs {
+		cmds = append(cmds, sub.Init())
+	}
+	return tea.Batch(cmds...)
+}
 
 func (n *netScreen) load() tea.Cmd {
 	return n.e.call(func(ctx context.Context) tea.Msg {
@@ -64,6 +90,35 @@ func (n *netScreen) load() tea.Cmd {
 }
 
 func (n *netScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
+	if k, isKey := msg.(tea.KeyPressMsg); isKey {
+		if !n.Capturing() {
+			switch k.String() {
+			case "]":
+				n.sub = (n.sub + 1) % (len(n.subs) + 1)
+				return n, nil
+			case "[":
+				n.sub = (n.sub + len(n.subs)) % (len(n.subs) + 1)
+				return n, nil
+			}
+		}
+		if n.sub > 0 {
+			_, cmd := n.subs[n.sub-1].Update(msg)
+			return n, cmd
+		}
+		return n.updateIfaces(msg)
+	}
+	// everything else (load results, "config changed") reaches every section
+	cmds := []tea.Cmd{}
+	_, c := n.updateIfaces(msg)
+	cmds = append(cmds, c)
+	for _, sub := range n.subs {
+		_, c := sub.Update(msg)
+		cmds = append(cmds, c)
+	}
+	return n, tea.Batch(cmds...)
+}
+
+func (n *netScreen) updateIfaces(msg tea.Msg) (screen, tea.Cmd) {
 	switch m := msg.(type) {
 	case netMsg:
 		n.loading, n.err = false, m.err
@@ -110,16 +165,26 @@ func (n *netScreen) key(m tea.KeyPressMsg) (screen, tea.Cmd) {
 		if n.cur >= 0 && n.cur < len(rows) {
 			return n.open(rows[n.cur])
 		}
+	case "n":
+		return n.openNew()
+	case "d":
+		if n.cur >= 0 && n.cur < len(rows) {
+			return n.askDelete(rows[n.cur])
+		}
 	}
 	return n, nil
 }
 
 func (n *netScreen) open(s uci.Section) (screen, tea.Cmd) {
 	if s.Type != "interface" {
-		return n, toast("bridges and devices are edited on the Config screen for now")
+		return n, toast("bridges are edited on the Bridges tab (press ] to move there)")
 	}
 	proto := opt(s, "proto")
-	if proto != "static" && proto != "dhcp" {
+	switch proto {
+	case "static", "dhcp", "dhcpv6", "pppoe", "none":
+	case "wireguard":
+		return n, toast("WireGuard interfaces are managed under Tasks (server, devices, client)")
+	default:
 		return n, toast(fmt.Sprintf("protocol %q is edited on the Config screen", proto))
 	}
 	if o, ok := s.Option("ipaddr"); ok && o.IsList && len(o.Values) > 1 {
@@ -130,6 +195,22 @@ func (n *netScreen) open(s uci.Section) (screen, tea.Cmd) {
 	}
 	n.edit = s
 	mtu := &field{Label: "MTU", Key: "mtu", Value: opt(s, "mtu"), Hint: "leave empty for the default", Validate: validate.IntRange(576, 9000)}
+	switch proto {
+	case "pppoe":
+		n.form = newForm("Interface "+s.Name+" (PPPoE)",
+			&field{Label: "Username", Key: "username", Value: opt(s, "username"), Required: true},
+			&field{Label: "Password", Key: "password", Secret: true, Hint: "leave empty to keep the current one"},
+			&field{Label: "Metric", Key: "metric", Value: opt(s, "metric"), Hint: "lower wins when several uplinks exist", Validate: validate.IntRange(0, 9999)},
+			mtu,
+		)
+		return n, nil
+	case "dhcpv6", "none":
+		n.form = newForm("Interface "+s.Name+" ("+proto+")",
+			&field{Label: "Metric", Key: "metric", Value: opt(s, "metric"), Validate: validate.IntRange(0, 9999)},
+			mtu,
+		)
+		return n, nil
+	}
 	if proto == "dhcp" {
 		n.form = newForm("Interface "+s.Name+" (DHCP client)",
 			&field{Label: "Hostname", Key: "hostname", Value: opt(s, "hostname"), Hint: "sent to the upstream DHCP server (optional)", Validate: validate.Hostname},
@@ -167,7 +248,7 @@ func (n *netScreen) formKey(m tea.KeyPressMsg) (screen, tea.Cmd) {
 	cmd := n.form.Update(m)
 	switch {
 	case n.form.cancelled:
-		n.form = nil
+		n.form, n.adding = nil, false
 	case n.form.done:
 		f := n.form
 		n.form = nil
@@ -177,6 +258,10 @@ func (n *netScreen) formKey(m tea.KeyPressMsg) (screen, tea.Cmd) {
 }
 
 func (n *netScreen) stage(f *form) tea.Cmd {
+	if n.adding {
+		n.adding = false
+		return n.stageNew(f)
+	}
 	list := listify(f.Changes("network", n.edit.Ref()), "dns")
 	if len(list) == 0 {
 		return toast("nothing changed")
@@ -189,7 +274,34 @@ func (n *netScreen) stage(f *form) tea.Cmd {
 	return toast("staged; review and apply on the Changes screen (c)")
 }
 
+func (n *netScreen) tabBar(w int) string {
+	var parts []string
+	for i, t := range netTabs {
+		if i == n.sub {
+			parts = append(parts, sSel.Render(" "+t+" "))
+		} else {
+			parts = append(parts, sDim.Render(" "+t+" "))
+		}
+	}
+	return " " + strings.Join(parts, "")
+}
+
 func (n *netScreen) View(w, h int) string {
+	if n.Capturing() && n.sub == 0 || n.sub > 0 && n.subs[n.sub-1].Capturing() {
+		// a form fills the panel
+		if n.sub > 0 {
+			return n.subs[n.sub-1].View(w, h)
+		}
+		return n.form.View(w, h)
+	}
+	head := n.tabBar(w) + "\n"
+	if n.sub > 0 {
+		return head + n.subs[n.sub-1].View(w, h-1)
+	}
+	return head + n.viewIfaces(w, h-1)
+}
+
+func (n *netScreen) viewIfaces(w, h int) string {
 	if n.form != nil {
 		return n.form.View(w, h)
 	}

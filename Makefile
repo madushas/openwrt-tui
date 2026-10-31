@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt check vendor-charm
+.PHONY: build test vet fmt check vendor-charm release
 
 build:
 	go build -o bin/owrt-tui ./cmd/owrt-tui
@@ -14,3 +14,7 @@ fmt:
 
 check: vet test
 	@test -z "$$(gofmt -l .)" || (echo "gofmt needed:"; gofmt -l .; exit 1)
+
+# make release VERSION=v0.1.0  ->  dist/*.tar.gz, *.zip and SHA256SUMS
+release:
+	scripts/release.sh $(VERSION)

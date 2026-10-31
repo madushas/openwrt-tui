@@ -6,6 +6,20 @@ All notable changes to this project are documented here.
 
 No changes yet.
 
+## [0.4.0] - 2026-10-31
+
+### Added
+
+- Task wizards for guest networks, port forwards, upstream DNS, WireGuard,
+  Wi-Fi schedules, scheduled reboots, backups, safe package upgrades, and
+  firmware image checks.
+- Advanced network, bridge, VLAN, route, firewall zone, rule, and port-forward
+  editors.
+- Event timeline, per-client traffic, temperature, cellular, and WireGuard
+  health alerts.
+- Router profiles, read-only configuration comparison, version reporting,
+  cross-platform CI, release archives, checksums, and user documentation.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added

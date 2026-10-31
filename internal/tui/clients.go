@@ -3,12 +3,14 @@ package tui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/madushakv/owrt-tui/internal/changes"
 	"github.com/madushakv/owrt-tui/internal/clients"
+	"github.com/madushakv/owrt-tui/internal/traffic"
 	"github.com/madushakv/owrt-tui/internal/uci"
 )
 
@@ -21,6 +23,10 @@ type clientsScreen struct {
 	err     error
 	form    *form
 	formFor string // "name" or "route"
+
+	prevS, nowS traffic.Sample // last two connection-tracking samples
+	rates       map[string]traffic.Rate
+	sortTraffic bool
 }
 
 func newClients(e *env) *clientsScreen { return &clientsScreen{e: e, loading: true} }
@@ -31,12 +37,13 @@ func (c *clientsScreen) Keys() string {
 	if c.form != nil {
 		return "enter edit  s stage  esc cancel"
 	}
-	return "n name  s make static  b block/unblock  v route via VPN/WAN  k kick  w wake  g reload"
+	return "n name  s make static  b block/unblock  v route via VPN/WAN  k kick  w wake  t sort by traffic  g reload"
 }
 
 type clientsMsg struct {
 	list []clients.Client
 	cfgs []uci.Config
+	tr   traffic.Sample
 	err  error
 }
 
@@ -52,7 +59,8 @@ func (c *clientsScreen) load() tea.Cmd {
 		if err != nil {
 			return clientsMsg{err: err}
 		}
-		return clientsMsg{list: clients.Merge(raw, cfgs), cfgs: cfgs}
+		tr, _ := c.e.S.Traffic(ctx) // best effort; the columns just stay empty
+		return clientsMsg{list: clients.Merge(raw, cfgs), cfgs: cfgs, tr: tr}
 	})
 }
 
@@ -67,6 +75,9 @@ func (c *clientsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 		c.loading, c.err = false, m.err
 		if m.err == nil {
 			c.list, c.cfgs = m.list, m.cfgs
+			c.prevS, c.nowS = c.nowS, m.tr
+			c.rates = traffic.Rates(c.prevS, c.nowS)
+			c.sortList()
 			c.cur = clampInt(c.cur, 0, len(c.list)-1)
 		}
 	case uciChangedMsg:
@@ -83,6 +94,41 @@ func (c *clientsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 		return c.key(m.String())
 	}
 	return c, nil
+}
+
+// weight returns the traffic figure used for sorting: the live rate when two
+// samples exist, otherwise the bytes of open connections.
+func (c *clientsScreen) weight(ip string) float64 {
+	if r, ok := c.rates[ip]; ok {
+		return r.Up + r.Down
+	}
+	u := c.nowS.By[ip]
+	return float64(u.Up + u.Down)
+}
+
+func (c *clientsScreen) sortList() {
+	if !c.sortTraffic {
+		return
+	}
+	sort.SliceStable(c.list, func(i, j int) bool { return c.weight(c.list[i].IP) > c.weight(c.list[j].IP) })
+}
+
+// trafficCell is the TRAFFIC column for one client.
+func (c *clientsScreen) trafficCell(ip string) string {
+	if !c.nowS.Available || ip == "" {
+		return ""
+	}
+	u, ok := c.nowS.By[ip]
+	if !ok {
+		return ""
+	}
+	if !c.nowS.Acct {
+		return fmt.Sprintf("%d conn", u.Conns)
+	}
+	if r, ok := c.rates[ip]; ok {
+		return "↓" + human(int64(r.Down)) + "/s ↑" + human(int64(r.Up)) + "/s"
+	}
+	return "↓" + human(u.Down) + " ↑" + human(u.Up)
 }
 
 func (c *clientsScreen) selected() (clients.Client, bool) {
@@ -117,6 +163,11 @@ func (c *clientsScreen) key(k string) (screen, tea.Cmd) {
 		return c, nil
 	case "down", "j":
 		c.cur = clampInt(c.cur+1, 0, len(c.list)-1)
+		return c, nil
+	case "t":
+		c.sortTraffic = !c.sortTraffic
+		c.sortList()
+		c.cur = 0
 		return c, nil
 	case "g":
 		c.loading = true
@@ -248,7 +299,44 @@ func (c *clientsScreen) View(w, h int) string {
 		return "\n  no clients found"
 	}
 	var b strings.Builder
-	b.WriteString(sDim.Render(fmt.Sprintf("  %-3s %-18s %-15s %-17s %-9s %s", "", "NAME", "ADDRESS", "MAC", "LINK", "FLAGS")) + "\n")
+	// Columns appear as the terminal allows: name, address and link always;
+	// then traffic, then flags, then the MAC address.
+	avail := w - 51
+	showTraffic := avail >= 25
+	if showTraffic {
+		avail -= 25
+	}
+	showFlags := avail >= 14
+	if showFlags {
+		avail -= 14
+	}
+	showMAC := avail >= 18
+	row := func(dot, name, ip, mac, link, tr, fl string) string {
+		r := fmt.Sprintf("  %-3s %-18s %-15s ", dot, clip(name, 18), ip)
+		if showMAC {
+			r += fmt.Sprintf("%-17s ", mac)
+		}
+		r += fmt.Sprintf("%-9s", link)
+		if showTraffic {
+			r += fmt.Sprintf(" %-24s", clip(tr, 24))
+		}
+		if showFlags {
+			r += " " + fl
+		}
+		return r
+	}
+	b.WriteString(sDim.Render(row("", "NAME", "ADDRESS", "MAC", "LINK", "TRAFFIC", "FLAGS")) + "\n")
+	foot := ""
+	switch {
+	case !c.nowS.Available:
+	case !c.nowS.Acct:
+		foot = "traffic: byte counting is off; on the router run: " + traffic.EnableHint
+	case len(c.rates) == 0:
+		foot = "traffic: bytes of open connections; press g again for live rates"
+	}
+	if foot != "" {
+		h--
+	}
 	lo, hi := window(len(c.list), c.cur, h-1)
 	for i := lo; i < hi; i++ {
 		cl := c.list[i]
@@ -257,6 +345,9 @@ func (c *clientsScreen) View(w, h int) string {
 			dot = "●"
 		} else if cl.Idle {
 			dot = "◌"
+		}
+		if cl.Blocked && !showFlags {
+			dot = "x"
 		}
 		link := "wired"
 		if cl.WifiIface != "" {
@@ -275,13 +366,65 @@ func (c *clientsScreen) View(w, h int) string {
 		if cl.WifiIface != "" {
 			fl = append(fl, "↓"+human(cl.RxBytes)+" ↑"+human(cl.TxBytes))
 		}
-		line := fmt.Sprintf("  %-3s %-18s %-15s %-17s %-9s %s", dot, clip(cl.Display(), 18), cl.IP, cl.MAC, link, strings.Join(fl, "  "))
+		line := row(dot, cl.Display(), cl.IP, cl.MAC, link, c.trafficCell(cl.IP), strings.Join(fl, "  "))
 		if i == c.cur {
 			line = sSel.Render(clip(line, w))
 		} else {
 			line = clip(line, w)
 		}
 		b.WriteString(line + "\n")
+	}
+	if foot != "" {
+		b.WriteString(sDim.Render("  "+clip(foot, w-4)) + "\n")
+	}
+	return b.String()
+}
+
+// Detail describes the selected client, so the list can stay narrow.
+func (c *clientsScreen) Detail(w, h int) string {
+	cl, ok := c.selected()
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	line := func(k, v string) {
+		if v != "" {
+			b.WriteString(" " + sDim.Render(fmt.Sprintf("%-9s", k)) + clip(v, w-12) + "\n")
+		}
+	}
+	b.WriteString(" " + sBold.Render(clip(cl.Display(), w-2)) + "\n")
+	switch {
+	case cl.Blocked:
+		b.WriteString(" " + chipBad.Render("BLOCKED") + "\n\n")
+	case cl.Online:
+		b.WriteString(" " + chipGood.Render("ONLINE") + "\n\n")
+	case cl.Idle:
+		b.WriteString(" " + chipDim.Render("IDLE") + "\n\n")
+	default:
+		b.WriteString(" " + chipDim.Render("OFFLINE") + "\n\n")
+	}
+	line("Address", cl.IP)
+	line("MAC", cl.MAC)
+	if cl.WifiIface != "" {
+		line("Wi-Fi", fmt.Sprintf("%s, %d dBm", cl.WifiIface, cl.Signal))
+		if cl.Connected > 0 {
+			line("Connected", fmt.Sprintf("%dm", cl.Connected/60))
+		}
+		line("Wi-Fi data", "↓"+human(cl.RxBytes)+" ↑"+human(cl.TxBytes))
+	} else if cl.Online || cl.Idle {
+		line("Link", "wired")
+	}
+	if cl.Static {
+		line("Lease", "reserved (static)")
+	}
+	if cl.Route != "" {
+		line("Route", "via "+cl.Route)
+	}
+	if t := c.trafficCell(cl.IP); t != "" {
+		line("Traffic", t)
+		if u, ok := c.nowS.By[cl.IP]; ok {
+			line("Conns", fmt.Sprintf("%d open", u.Conns))
+		}
 	}
 	return b.String()
 }

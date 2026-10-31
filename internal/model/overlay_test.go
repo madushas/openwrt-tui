@@ -176,3 +176,33 @@ func TestChanged(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+func TestOverlayReorderMovesToAbsolutePosition(t *testing.T) {
+	var set changes.Set
+	// sections in order: dhcp lan, host one, host two, host three(?)
+	if err := set.Add(changes.Change{Op: changes.OpReorder, Config: "dhcp", Section: "@host[1]", Value: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	in := load(t)
+	out := Overlay(in, &set)
+	if n := name(out[0], "@host[0]"); n != "two" {
+		t.Fatalf("host[0] is %q after moving host two to position 1, want two", n)
+	}
+	if n := name(out[0], "@host[1]"); n != "one" {
+		t.Fatalf("host[1] is %q, want one", n)
+	}
+	if n := name(in[0], "@host[0]"); n != "one" {
+		t.Fatalf("the input was modified: %q", n)
+	}
+	if len(out[0].Sections) != len(in[0].Sections) {
+		t.Fatal("sections lost or duplicated")
+	}
+	// an out-of-range position clamps to the end
+	var end changes.Set
+	end.Add(changes.Change{Op: changes.OpReorder, Config: "dhcp", Section: "@host[0]", Value: "9999"})
+	o2 := Overlay(in, &end)
+	last := o2[0].Sections[len(o2[0].Sections)-1]
+	if v, _ := last.Option("name"); v.Value() != "one" {
+		t.Fatalf("last section is %q", v.Value())
+	}
+}

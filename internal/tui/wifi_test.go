@@ -39,7 +39,8 @@ func TestWifiListsRadiosAndNetworks(t *testing.T) {
 
 func TestWifiReadOnlyStagesNothing(t *testing.T) {
 	a := newApp(t, true)
-	press(t, a, tab(a, "Wi-Fi"), "j", "enter", "t")
+	openTab(t, a, "Wi-Fi")
+	press(t, a, "j", "enter", "t")
 	if wifiOf(t, a).form != nil || a.env.Staged.Len() != 0 {
 		t.Fatal("read-only mode allowed an edit")
 	}
@@ -125,7 +126,8 @@ func TestWifiRejectsShortPasswordAndMissingKey(t *testing.T) {
 
 func TestWifiRadioFormValidates(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "Wi-Fi"), "enter")
+	openTab(t, a, "Wi-Fi")
+	press(t, a, "enter")
 	w := wifiOf(t, a)
 	if w.form == nil || !strings.Contains(w.form.Title, "radio0") {
 		t.Fatalf("radio form not open: %+v", w.form)

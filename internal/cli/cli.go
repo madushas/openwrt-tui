@@ -23,6 +23,9 @@ import (
 	"github.com/madushakv/owrt-tui/internal/transport"
 )
 
+// Version is set at build time with -ldflags "-X .../internal/cli.Version=v1.2.3".
+var Version = "dev"
+
 // usageError makes Run exit with status 2 instead of 1.
 type usageError string
 
@@ -50,6 +53,8 @@ type globals struct {
 	demo, write            bool
 	exportDir              string
 	timeout                time.Duration
+	icons                  string
+	profile                string
 }
 
 // env is what a subcommand gets.
@@ -74,6 +79,8 @@ var commands []command
 
 func init() {
 	commands = []command{
+		{"profiles", "[add <name> <target> [-i key] [-p port] [-note text] | rm <name>]", "list, add or remove saved routers (use with -profile)", nil},
+		{"compare", "[-config a,b] [-all] [A] B", "show how two routers' configurations differ (A defaults to the current router; each is a profile, user@host, or demo)", nil},
 		{"probe", "", "show what the router is and what it can do", cmdProbe},
 		{"uci", "[-reveal] [config]", "show configuration (secrets masked unless -reveal)", cmdUCI},
 		{"services", "", "list init scripts with enabled and running state", cmdServices},
@@ -97,6 +104,9 @@ func Run(args []string, out, errw io.Writer) int {
 	fs.StringVar(&g.exportDir, "export-dir", "", "tui only: git repository to record the masked configuration in after every apply")
 	fs.BoolVar(&g.write, "write", false, "tui only: allow changes (default is read-only)")
 	fs.BoolVar(&g.demo, "demo", false, "use a built-in fake router instead of connecting")
+	fs.StringVar(&g.profile, "profile", "", "saved router name (see: owrt-tui profiles); -target, -i and -p override it")
+	showVersion := fs.Bool("version", false, "print the version and exit")
+	fs.StringVar(&g.icons, "icons", "", "tui only: auto, unicode or ascii (plain-ASCII symbols for the Linux console / PuTTY; env OWRT_TUI_ICONS)")
 	fs.DurationVar(&g.timeout, "timeout", 30*time.Second, "per-command timeout")
 	fs.Usage = func() { usage(errw) }
 	if err := fs.Parse(args); err != nil {
@@ -105,7 +115,22 @@ func Run(args []string, out, errw io.Writer) int {
 		}
 		return 2
 	}
+	if *showVersion {
+		fmt.Fprintln(out, "owrt-tui", Version)
+		return 0
+	}
+	if g.profile != "" {
+		if err := g.applyProfile(); err != nil {
+			return report(errw, err)
+		}
+	}
 	rest := fs.Args()
+	if len(rest) > 0 && rest[0] == "profiles" {
+		return report(errw, cmdProfiles(rest[1:], out))
+	}
+	if len(rest) > 0 && rest[0] == "compare" {
+		return report(errw, cmdCompare(g, rest[1:], out))
+	}
 	if (TUI != nil || TUIConnect != nil) && (len(rest) == 0 || rest[0] == "tui") {
 		return runTUI(g, errw)
 	}
@@ -147,6 +172,9 @@ func Run(args []string, out, errw io.Writer) int {
 }
 
 func runTUI(g globals, errw io.Writer) int {
+	if g.icons != "" {
+		os.Setenv("OWRT_TUI_ICONS", g.icons)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if !g.demo && TUIConnect != nil {

@@ -4,8 +4,13 @@
 package demo
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"encoding/base64"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 
 	"github.com/madushakv/owrt-tui/internal/transport"
@@ -42,11 +47,28 @@ tmpfs                   262144      3000    259144   1% /tmp
 // Throwaway demo values; none of these are real credentials.
 const uciExport = `package network
 
+config device 'br_lan'
+	option name 'br-lan'
+	option type 'bridge'
+	list ports 'lan1'
+	list ports 'lan2'
+	list ports 'lan3'
+
 config interface 'lan'
 	option device 'br-lan'
 	option proto 'static'
 	option ipaddr '192.168.1.1'
 	option netmask '255.255.255.0'
+
+config interface 'wan'
+	option device 'wan'
+	option proto 'dhcp'
+
+config route
+	option interface 'lan'
+	option target '10.20.0.0/16'
+	option gateway '192.168.1.254'
+	option metric '10'
 
 config interface 'wg0'
 	option proto 'wireguard'
@@ -116,6 +138,33 @@ config zone
 	option name 'guest'
 	option input 'ACCEPT'
 	list network 'guest'
+
+config forwarding
+	option src 'lan'
+	option dest 'wan'
+
+config rule
+	option name 'Allow-Ping'
+	option src 'wan'
+	option proto 'icmp'
+	option target 'ACCEPT'
+
+config rule
+	option name 'Block-Telnet'
+	option src 'lan'
+	option dest 'wan'
+	option proto 'tcp'
+	option dest_port '23'
+	option target 'REJECT'
+
+config redirect
+	option name 'plex'
+	option src 'wan'
+	option src_dport '32400'
+	option dest 'lan'
+	option dest_ip '192.168.1.60'
+	option proto 'tcp'
+	option target 'DNAT'
 `
 
 const services = `svc dnsmasq 1 19
@@ -133,6 +182,11 @@ Sun Oct 25 09:13:02 2026 daemon.info dnsmasq-dhcp[1234]: DHCPACK(br-lan) 192.168
 Sun Oct 25 09:13:03 2026 daemon.err dropbear[999]: Bad password attempt for 'root' from 203.0.113.9:5555
 Sun Oct 25 09:13:04 2026 daemon.warn netifd: Interface 'wan' has link connectivity loss
 Sun Oct 25 09:13:09 2026 daemon.notice netifd: Interface 'wan' is now up
+Sun Oct 25 09:14:10 2026 daemon.info hostapd: phy0-ap0: AP-STA-CONNECTED aa:bb:cc:00:00:01 auth_alg=sae
+Sun Oct 25 09:14:11 2026 daemon.info dnsmasq-dhcp[1234]: DHCPACK(br-lan) 192.168.1.50 aa:bb:cc:00:00:01 pixel-8
+Sun Oct 25 09:20:44 2026 daemon.info dropbear[1011]: Pubkey auth succeeded for 'root' with key sha256:abc from 192.168.1.7:44332
+Sun Oct 25 09:30:00 2026 cron.notice crond[321]: USER root pid 3039 cmd /usr/bin/ddns_update.sh >> /root/ddns.log 2>&1
+Sun Oct 25 09:41:02 2026 daemon.info hostapd: phy0-ap0: AP-STA-DISCONNECTED aa:bb:cc:00:00:01
 `
 
 const installed = `busybox-1.37.0-r4 aarch64 {busybox} (GPL-2.0-only) [installed]
@@ -163,10 +217,17 @@ func Router() *transport.Fake {
 	return (&transport.Fake{Name: "demo"}).
 		OnFunc("##owrt-metrics", metricsGen()).
 		On("##owrt-wifi-caps", wifiCaps).
-		On("##overlay", "##overlay\noverlayfs:/overlay 14000 6000 7000 46% /overlay\n##release\n25.12.3\n##sshkeys\n1\n##cron\n0 4 * * * reboot\n*/15 * * * * /usr/bin/ddns_update.sh >> /root/ddns.log 2>&1\n").
+		On("##overlay", "##overlay\noverlayfs:/overlay 14000 6000 7000 46% /overlay\n##release\n25.12.3\n##sshkeys\n1\n##cron\n0 4 * * * reboot\n*/15 * * * * /usr/bin/ddns_update.sh >> /root/ddns.log 2>&1\n##temp\n58000\n61000\n##now\n1790000100\n##wg\nwgok\nwg0\tpubkey-phone\t1790000050\n##lte\n{\"type\":\"lte\",\"rssi\":-78,\"rsrq\":-11,\"rsrp\":-108,\"snr\":4.2}\n").
+		OnFunc("##acct", trafficGen()).
 		On("##leases", "##leases\n1790000000 aa:bb:cc:00:00:01 192.168.1.50 pixel-8 01:aa\n1790000000 aa:bb:cc:00:00:02 192.168.1.51 laptop *\n1790000000 aa:bb:cc:00:00:04 192.168.1.60 printer *\n##neigh\n192.168.1.50 dev br-lan lladdr aa:bb:cc:00:00:01 REACHABLE\n192.168.1.51 dev br-lan lladdr aa:bb:cc:00:00:02 STALE\n192.168.1.60 dev br-lan lladdr aa:bb:cc:00:00:04 REACHABLE\n##sta phy0-ap0\nStation aa:bb:cc:00:00:01 (on phy0-ap0)\n\tinactive time:\t40 ms\n\trx bytes:\t5123456\n\ttx bytes:\t90654321\n\tsignal:  \t-52 [-52] dBm\n\tconnected time:\t3600 seconds\n").
 		On("ubus call hostapd.", "").
 		On("etherwake", "").
+		On("ip route show", "default via 192.168.1.254 dev wan\n10.20.0.0/16 via 192.168.1.254 dev br-lan metric 10\n192.168.1.0/24 dev br-lan scope link\n").
+		OnFunc("crontab", cronHandler()).
+		On("sysupgrade -b", demoBackup()).
+		On("sysupgrade -T", "Image metadata not present\nexit=0\n").
+		On("apk update", "fetch https://downloads.openwrt.org/releases/25.12.3/packages/aarch64/packages.adb\nOK: 48 MiB in 291 packages\n").
+		On("apk upgrade", "(1/2) Upgrading busybox (1.37.0-r4 -> 1.37.0-r5)\n(2/2) Upgrading dnsmasq-full (2.91-r1 -> 2.91-r2)\nOK: 48 MiB in 291 packages\n").
 		On(".confirm", "confirmed\n").
 		On("##owrt-postcheck", "##owrt-postcheck\ndefault_route=ok\ngateway=ok\ndns=ok\nwg_wg0=40\nproc_dnsmasq=ok\nproc_dropbear=ok\n").
 		On("ubus call system board", probe).
@@ -182,6 +243,26 @@ func Router() *transport.Fake {
 		On("ping -c", ping).
 		On("traceroute", "traceroute to 1.1.1.1\n 1  192.168.1.254  0.9 ms\n 2  100.64.0.1  4.1 ms\n 3  1.1.1.1  9.6 ms\n").
 		On("nslookup", "Server:\t\t127.0.0.1\nName:\texample.com\nAddress: 93.184.216.34\n")
+}
+
+// trafficGen returns a connection-tracking reading whose counters grow on every
+// call, so the Clients screen shows live rates in demo mode.
+func trafficGen() func(cmd, stdin string) transport.Result {
+	var mu sync.Mutex
+	n := 0
+	return func(cmd, stdin string) transport.Result {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		line := func(ip string, up, down int) string {
+			return fmt.Sprintf("ipv4     2 tcp      6 300 ESTABLISHED src=%s dst=1.2.3.4 sport=5000 dport=443 packets=10 bytes=%d src=1.2.3.4 dst=203.0.113.2 sport=443 dport=5000 packets=12 bytes=%d [ASSURED] mark=0 use=2\n", ip, up, down)
+		}
+		out := "##acct\n1\n##ct\n"
+		out += line("192.168.1.50", 400000*n, 9000000*n)
+		out += line("192.168.1.51", 20000*n, 150000*n)
+		out += line("192.168.1.60", 500*n, 2000*n)
+		return transport.Result{Stdout: out}
+	}
 }
 
 // metricsGen returns a generator whose counters advance on every call, so the
@@ -317,3 +398,31 @@ Wiphy phy1
 global
 country 00: DFS-UNSET
 `
+
+// cronHandler is a tiny stateful crontab: "crontab -l" reads, "crontab - &&" stores stdin.
+func cronHandler() func(cmd, stdin string) transport.Result {
+	var mu sync.Mutex
+	tab := "0 4 * * * reboot\n*/15 * * * * /usr/bin/ddns_update.sh >> /tmp/ddns.log 2>&1\n"
+	return func(cmd, stdin string) transport.Result {
+		mu.Lock()
+		defer mu.Unlock()
+		if strings.Contains(cmd, "crontab - ") {
+			tab = stdin
+			return transport.Result{}
+		}
+		return transport.Result{Stdout: tab}
+	}
+}
+
+// demoBackup is a small but valid configuration archive, base64 encoded.
+func demoBackup() string {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	body := []byte("config interface 'lan'\n")
+	tw.WriteHeader(&tar.Header{Name: "etc/config/network", Mode: 0o600, Size: int64(len(body))})
+	tw.Write(body)
+	tw.Close()
+	zw.Close()
+	return base64.StdEncoding.EncodeToString(buf.Bytes()) + "\n"
+}

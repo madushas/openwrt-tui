@@ -69,7 +69,7 @@ func TestServices(t *testing.T) {
 
 func TestLogsFilter(t *testing.T) {
 	_, all, _ := run(t, "logs")
-	if n := strings.Count(all, "\n"); n != 5 {
+	if n := strings.Count(all, "\n"); n != 10 {
 		t.Errorf("unfiltered: %d lines", n)
 	}
 	_, warn, _ := run(t, "logs", "-level", "warn")
@@ -77,7 +77,7 @@ func TestLogsFilter(t *testing.T) {
 		t.Errorf("warn and worse: %d lines:\n%s", n, warn)
 	}
 	_, byProc, _ := run(t, "logs", "-proc", "dropbear")
-	if n := strings.Count(byProc, "\n"); n != 1 || !strings.Contains(byProc, "Bad password") {
+	if n := strings.Count(byProc, "\n"); n != 2 || !strings.Contains(byProc, "Bad password") {
 		t.Errorf("by process:\n%s", byProc)
 	}
 	if code, _, errs := run(t, "logs", "-level", "loud"); code != 2 || !strings.Contains(errs, "unknown level") {
@@ -147,5 +147,69 @@ func TestSample(t *testing.T) {
 	code, raw, _ := run(t, "sample", "-raw")
 	if code != 0 || !strings.Contains(raw, "##owrt-metrics") || !strings.Contains(raw, "##end") {
 		t.Fatalf("-raw should print the unparsed router output:\n%s", raw)
+	}
+}
+
+func withProfiles(t *testing.T) {
+	t.Helper()
+	t.Setenv("OWRT_TUI_PROFILES", t.TempDir()+"/profiles.json")
+}
+
+func TestProfilesCommand(t *testing.T) {
+	withProfiles(t)
+	_, out, _ := run(t, "profiles")
+	if !strings.Contains(out, "no saved routers") {
+		t.Fatal(out)
+	}
+	if code, _, errs := run(t, "profiles", "add", "home", "root@192.168.1.1", "-p", "2222", "-note", "fibre firewall"); code != 0 {
+		t.Fatal(errs)
+	}
+	_, out, _ = run(t, "profiles")
+	for _, want := range []string{"home", "root@192.168.1.1", "2222", "fibre firewall"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	if code, _, errs := run(t, "profiles", "add", "bad name", "x"); code != 1 || !strings.Contains(errs, "profile name") {
+		t.Fatalf("%d %q", code, errs)
+	}
+	if code, _, errs := run(t, "profiles", "add", "x", "-oProxyCommand=evil"); code == 0 {
+		t.Fatalf("option-looking target accepted: %q", errs)
+	}
+	if code, _, _ := run(t, "profiles", "rm", "home"); code != 0 {
+		t.Fatal("rm failed")
+	}
+	if code, _, errs := run(t, "profiles", "rm", "home"); code != 1 || !strings.Contains(errs, "no such profile") {
+		t.Fatalf("%d %q", code, errs)
+	}
+}
+
+func TestUnknownProfileIsAnError(t *testing.T) {
+	withProfiles(t)
+	var o, e bytes.Buffer
+	if code := Run([]string{"-profile", "nope", "probe"}, &o, &e); code != 1 || !strings.Contains(e.String(), "no such profile") {
+		t.Fatalf("%d %q", code, e.String())
+	}
+}
+
+func TestCompareDemoWithItself(t *testing.T) {
+	withProfiles(t)
+	code, out, errs := run(t, "compare", "demo")
+	if code != 0 || out != "no differences\n" {
+		t.Fatalf("%d %q %q", code, out, errs)
+	}
+	if code, _, errs := run(t, "compare", "demo", "demo", "demo"); code != 2 || !strings.Contains(errs, "usage") {
+		t.Fatalf("%d %q", code, errs)
+	}
+	var o, e bytes.Buffer
+	if code := Run([]string{"compare", "demo"}, &o, &e); code != 2 {
+		t.Fatalf("one argument without a first router: %d %q", code, e.String())
+	}
+}
+
+func TestVersionFlag(t *testing.T) {
+	var o, e bytes.Buffer
+	if code := Run([]string{"-version"}, &o, &e); code != 0 || !strings.HasPrefix(o.String(), "owrt-tui ") {
+		t.Fatalf("%d %q", code, o.String())
 	}
 }

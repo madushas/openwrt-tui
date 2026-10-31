@@ -103,10 +103,12 @@ var anonRef = regexp.MustCompile(`^@([A-Za-z0-9_]+)\[(-?\d+)\]$`)
 func (s *Set) Ordered() []Change { return s.ordered() }
 
 func (s *Set) ordered() []Change {
-	var first, deletes []Change
+	var first, deletes, moves []Change
 	for _, c := range s.items {
 		if c.Op == OpDelete && c.Option == "" {
 			deletes = append(deletes, c)
+		} else if c.Op == OpReorder {
+			moves = append(moves, c)
 		} else {
 			first = append(first, c)
 		}
@@ -125,7 +127,7 @@ func (s *Set) ordered() []Change {
 		}
 		return pos(a) > pos(b)
 	})
-	return append(first, deletes...)
+	return append(append(first, deletes...), moves...)
 }
 
 // ConfirmCommand returns the command that cancels a pending rollback.

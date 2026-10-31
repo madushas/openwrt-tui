@@ -47,6 +47,14 @@ type Facts struct {
 	Cron           []string
 	Services       []services.Service
 	Release        string
+
+	// Phase 9 observations.
+	TempC      float64 // hottest thermal zone; valid when TempOK
+	TempOK     bool
+	WGKnown    bool // wg is installed, so Handshakes is meaningful
+	Now        int64
+	Handshakes []Handshake
+	LTE        *LTE
 }
 
 // Input is what the rules look at.
@@ -73,6 +81,7 @@ func Check(in Input) []Finding {
 var rules = []func(Input) []Finding{
 	ruleDupList, ruleMultiZone, ruleOpenZone, ruleWanExposed, ruleCountry,
 	ruleSSH, ruleOverlay, ruleCron, ruleServices,
+	ruleTemp, ruleWGStale, ruleLTE,
 }
 
 func cfg(in Input, name string) (uci.Config, bool) {

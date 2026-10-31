@@ -5,6 +5,7 @@ package changes
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/madushakv/owrt-tui/internal/shq"
@@ -19,6 +20,10 @@ const (
 	OpDelList Op = "del_list" // remove a list value
 	OpDelete  Op = "delete"   // delete an option, or a whole section when Option is empty
 	OpAddSect Op = "add"      // create a named section of Type
+	// OpReorder moves a section to a position (0-based, among all sections of
+	// the config file) with Value holding the position. Order matters for
+	// firewall rules.
+	OpReorder Op = "reorder"
 )
 
 // Change is one staged edit.
@@ -53,6 +58,10 @@ func (c Change) Validate() error {
 			return fmt.Errorf("invalid section type")
 		}
 	case OpDelete:
+	case OpReorder:
+		if n, err := strconv.Atoi(c.Value); err != nil || n < 0 || n > 10000 || c.Option != "" {
+			return fmt.Errorf("reorder needs a section and a position 0-10000")
+		}
 	default:
 		return fmt.Errorf("unknown op %q", c.Op)
 	}
@@ -81,6 +90,8 @@ func (c Change) Command() string {
 		return "uci delete " + shq.Quote(c.path())
 	case OpAddSect:
 		return "uci set " + shq.Quote(c.Config+"."+c.Section+"="+c.Type)
+	case OpReorder:
+		return "uci reorder " + shq.Quote(c.Config+"."+c.Section+"="+c.Value)
 	}
 	return ""
 }
@@ -104,6 +115,8 @@ func (c Change) Describe() string {
 		return fmt.Sprintf("%s  deleted", c.path())
 	case OpAddSect:
 		return fmt.Sprintf("%s.%s  + new %s section", c.Config, c.Section, c.Type)
+	case OpReorder:
+		return fmt.Sprintf("%s.%s  moved to position %s", c.Config, c.Section, c.Value)
 	}
 	return c.path()
 }
@@ -116,6 +129,31 @@ type Set struct{ items []Change }
 func (s *Set) Add(c Change) error {
 	if err := c.Validate(); err != nil {
 		return err
+	}
+	// Anonymous sections are addressed by position ("@rule[3]"), and a reorder
+	// changes positions, so a reorder may not be mixed with other edits to the
+	// same file: apply one first.
+	for _, e := range s.items {
+		if e.Config != c.Config {
+			continue
+		}
+		if c.Op == OpReorder && e.Op == OpReorder && e.Section != c.Section {
+			return fmt.Errorf("%s already has a staged reorder; apply it before moving another section", c.Config)
+		}
+		if c.Op == OpReorder && e.Op != OpReorder {
+			return fmt.Errorf("%s has other staged changes; apply or clear them before reordering", c.Config)
+		}
+		if c.Op != OpReorder && e.Op == OpReorder {
+			return fmt.Errorf("%s has a staged reorder; apply or clear it before making other changes there", c.Config)
+		}
+	}
+	if c.Op == OpReorder {
+		for i, e := range s.items {
+			if e.Op == OpReorder && e.Config == c.Config && e.Section == c.Section {
+				s.items = append(s.items[:i], s.items[i+1:]...)
+				break
+			}
+		}
 	}
 	if c.Op == OpSet || c.Op == OpDelete {
 		for i, e := range s.items {

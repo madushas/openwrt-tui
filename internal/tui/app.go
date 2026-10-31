@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 // Run starts the TUI and blocks until the user quits.
 func Run(ctx context.Context, s *session.Session, timeout time.Duration) error {
+	SetIcons(os.Getenv("OWRT_TUI_ICONS"))
 	// Cancelling on exit stops a running "logread -f" or traceroute on the router.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -49,8 +51,36 @@ type borderless interface{ Borderless() bool }
 type detailer interface{ Detail(w, h int) string }
 
 var icons = map[string]string{
-	"Dashboard": "◈", "Config": "≡", "Changes": "±", "History": "↶", "Health": "♥", "Clients": "☰", "Services": "▣",
-	"Logs": "▤", "Packages": "▥", "Diagnostics": "◎",
+	"Dashboard":   "◆",
+	"Network":     "⑂",
+	"Wi-Fi":       "∿",
+	"DHCP":        "↦",
+	"Clients":     "☍",
+	"Config":      "⚙",
+	"Changes":     "±",
+	"History":     "↺",
+	"Health":      "●",
+	"Tasks":       "▷",
+	"Cron":        "◴",
+	"Services":    "▣",
+	"Events":      "◷",
+	"Logs":        "▤",
+	"Packages":    "⊞",
+	"Diagnostics": "◎",
+}
+
+// asciiIcons are the plain-ASCII sidebar icons used in ASCII mode.
+var asciiIcons = map[string]string{
+	"Dashboard": "#", "Network": "+", "Wi-Fi": "~", "DHCP": ">", "Clients": "@",
+	"Config": "%", "Changes": "=", "History": "<", "Health": "*", "Tasks": "}",
+	"Cron": "o", "Services": "$", "Events": "!", "Logs": "|", "Packages": "&", "Diagnostics": "?",
+}
+
+func iconFor(title string) string {
+	if asciiOn {
+		return asciiIcons[title]
+	}
+	return icons[title]
 }
 
 // App is the root model.
@@ -79,11 +109,14 @@ func New(ctx context.Context, s *session.Session, timeout time.Duration) *App {
 		newWifi(e),
 		newDHCP(e),
 		newClients(e),
+		newTasks(e),
+		newCron(e),
 		newHealth(e),
 		newUCI(e),
 		newChanges(e),
 		newHistory(e),
 		newServices(e),
+		newEvents(e),
 		newLogs(e),
 		newPackages(e),
 		newDiag(e),
@@ -336,7 +369,7 @@ func (a *App) paletteItems() []paletteItem {
 // ---- view ----
 
 func (a *App) View() tea.View {
-	v := tea.NewView(a.render())
+	v := tea.NewView(finish(a.render()))
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "owrt-tui " + a.env.S.T.Describe()
@@ -370,6 +403,13 @@ func (a *App) header(w int) string {
 			right = sDim.Render(t+"  ") + right
 		}
 	}
+	if bad, warn := a.env.alertBad, a.env.alertWarn; bad+warn > 0 {
+		chip := chipWarn
+		if bad > 0 {
+			chip = chipBad
+		}
+		right = chip.Render(fmt.Sprintf("▲ %d alert(s)", bad+warn)) + " " + right
+	}
 	if n := a.env.Staged.Len(); n > 0 {
 		right = chipWarn.Render(fmt.Sprintf("± %d staged", n)) + " " + right
 	}
@@ -384,7 +424,9 @@ func (a *App) footer(w int) string {
 		if a.ask.Danger {
 			st = sBad
 		}
-		return clip(" "+st.Render(a.ask.Prompt)+sDim.Render("   y yes · n no"), w)
+		suffix := sDim.Render("   y yes · n no")
+		room := w - 1 - lipgloss.Width(suffix)
+		return " " + clip(st.Render(a.ask.Prompt), max0(room)) + suffix
 	case a.toast.Text != "":
 		if a.toast.Error {
 			return clip(" "+sBad.Render("✗ "+a.toast.Text), w)
@@ -395,12 +437,7 @@ func (a *App) footer(w int) string {
 	case a.help:
 		return hints("esc close", w)
 	}
-	left := hints(a.screens[a.active].Keys(), w)
-	right := hints(": palette  ? help  q quit", w)
-	if lipgloss.Width(left)+lipgloss.Width(right)+3 <= w {
-		return " " + padVisible(left, w-lipgloss.Width(right)-3) + right + " "
-	}
-	return " " + clip(left, w-1)
+	return footerHints(a.screens[a.active].Keys(), w)
 }
 
 func (a *App) mainBody(w, h int) (title, right, body string) {
@@ -452,11 +489,27 @@ func (a *App) render() string {
 func (a *App) renderCompact() string {
 	bodyH := a.h - 4 // header, tabs, rule, footer
 	var tabs []string
-	for i, l := range a.tabLabels() {
+	labels := a.tabLabels()
+	for i, l := range labels {
 		if i == a.active {
 			tabs = append(tabs, sTabOn.Render(l))
 		} else {
 			tabs = append(tabs, sTab.Render(l))
+		}
+	}
+	// Scroll so the active tab is always in view: drop tabs from the left until
+	// everything up to and including the active one fits.
+	for start := 0; start < a.active; start++ {
+		width := 0
+		for _, t := range tabs[start : a.active+1] {
+			width += lipgloss.Width(t)
+		}
+		if width <= a.w-2 {
+			tabs = tabs[start:]
+			if start > 0 {
+				tabs[0] = sDim.Render("‹") + tabs[0]
+			}
+			break
 		}
 	}
 	_, _, body := a.mainBody(a.w, bodyH)
@@ -472,7 +525,7 @@ func (a *App) renderCompact() string {
 func (a *App) sidebar(w, h int) string {
 	var lines []string
 	for i, s := range a.screens {
-		label := fmt.Sprintf(" %s %s %s", icons[s.Title()], numKey(i), s.Title())
+		label := fmt.Sprintf(" %s %s %s", iconFor(s.Title()), numKey(i), s.Title())
 		if _, ok := s.(*changesScreen); ok && a.env.Staged.Len() > 0 {
 			label += fmt.Sprintf(" (%d)", a.env.Staged.Len())
 		}
@@ -504,7 +557,7 @@ func (a *App) helpText() string {
 	}
 	b.WriteString("\n " + sAccent.Render("Everywhere") + "\n")
 	line("tab, shift+tab", "next / previous screen")
-	line("1-7", "jump to a screen (or click it in the menu)")
+	line("1-9, 0", "jump to a screen; later ones via tab, : or a click")
 	line(": or ctrl+p", "command palette: type to find anything")
 	line("?", "this help")
 	line("q, ctrl+c", "quit")
