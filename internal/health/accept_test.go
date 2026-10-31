@@ -2,6 +2,7 @@ package health
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -60,6 +61,9 @@ func TestAcceptHidesUntilTheFindingChanges(t *testing.T) {
 }
 
 func TestAcceptedStoreIsPrivateAndSurvivesRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not portable to Windows")
+	}
 	dir := t.TempDir()
 	if err := SaveAccepted(dir, "root@192.168.10.1", Accepted{"a": "1"}); err != nil {
 		t.Fatal(err)

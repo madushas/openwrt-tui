@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +88,9 @@ func TestApplyIsRecordedAndRestoreStagesTheUndo(t *testing.T) {
 }
 
 func TestHistoryFilesArePrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not portable to Windows")
+	}
 	st := withStore(t)
 	a := writeApp(t)
 	a.env.Staged.Add(chgSet("dhcp", "lan", "leasetime", "2h", "12h"))

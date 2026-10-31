@@ -3,6 +3,7 @@ package discover
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -68,6 +69,9 @@ func TestParseHosts(t *testing.T) {
 }
 
 func TestAppendHostIsAppendOnlyAndRefusesDuplicates(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not portable to Windows")
+	}
 	p := filepath.Join(t.TempDir(), "sub", "config")
 	if err := AppendHost(p, HostEntry{Alias: "gw", HostName: "192.168.1.1", User: "root", IdentityFile: "~/.ssh/id_ed25519_owrt"}); err != nil {
 		t.Fatal(err)

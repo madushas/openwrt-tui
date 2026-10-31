@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,9 @@ func TestDecode(t *testing.T) {
 }
 
 func TestSaveIsPrivateAndNeverOverwrites(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not portable to Windows")
+	}
 	root := t.TempDir()
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	p, err := Save(root, "root@192.168.1.1", []byte("x"), now)

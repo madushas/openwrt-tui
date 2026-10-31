@@ -3,6 +3,7 @@ package history
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,9 @@ func TestSaveLoadListNewestFirst(t *testing.T) {
 }
 
 func TestFilesAreSeverelyPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not portable to Windows")
+	}
 	s := open(t)
 	s.Save(Entry{ID: "chg-20260101-000001", Configs: map[string]string{"wireless": "secret"}})
 	s.SaveBaseline(map[string]string{"a": "b"})
