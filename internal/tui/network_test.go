@@ -34,7 +34,8 @@ func TestNetworkListsInterfaces(t *testing.T) {
 
 func TestNetworkReadOnlyAndUnsupportedProtocols(t *testing.T) {
 	a := newApp(t, true)
-	press(t, a, tab(a, "Network"), "enter")
+	openTab(t, a, "Network")
+	press(t, a, "enter")
 	if netOf(t, a).form != nil {
 		t.Fatal("read-only mode opened a form")
 	}

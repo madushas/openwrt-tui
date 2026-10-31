@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -111,6 +112,9 @@ func fakeTools(t *testing.T) {
 }
 
 func TestScanResolvesAliasAndPortThroughSSH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell test doubles are not executable on Windows")
+	}
 	fakeTools(t)
 	kh := filepath.Join(t.TempDir(), "kh")
 	args := filepath.Join(t.TempDir(), "args")

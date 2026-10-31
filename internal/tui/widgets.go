@@ -218,6 +218,10 @@ func rate(bps float64, bits bool) string {
 
 // hints turns "key desc  key desc" into styled key chips, cut to w cells.
 func hints(keys string, w int) string {
+	return clip(renderHints(hintItems(keys)), w)
+}
+
+func hintItems(keys string) []string {
 	var parts []string
 	for _, item := range strings.Split(keys, "  ") {
 		item = strings.TrimSpace(item)
@@ -227,5 +231,32 @@ func hints(keys string, w int) string {
 		k, d, _ := strings.Cut(item, " ")
 		parts = append(parts, sKey.Render(k)+" "+sKeyDesc.Render(d))
 	}
-	return clip(strings.Join(parts, sDim.Render("  ")), w)
+	return parts
+}
+
+func renderHints(parts []string) string { return strings.Join(parts, sDim.Render("  ")) }
+
+// footerHints lays out the screen's key hints beside the global ones. When
+// they do not fit, whole hints are dropped from the end of the screen's list
+// (never cut mid-word), and "? help" is always kept so the rest stays
+// discoverable.
+func footerHints(keys string, w int) string {
+	left := hintItems(keys)
+	full := renderHints(hintItems(": palette  ? help  q quit"))
+	short := renderHints(hintItems("? help"))
+	for _, right := range []string{full, short} {
+		for n := len(left); n >= 0; n-- {
+			l := renderHints(left[:n])
+			if n < len(left) {
+				l += sDim.Render(" …")
+			}
+			if n == 0 && len(left) > 0 {
+				l = ""
+			}
+			if lipgloss.Width(l)+lipgloss.Width(right)+3 <= w {
+				return " " + padVisible(l, w-lipgloss.Width(right)-3) + right + " "
+			}
+		}
+	}
+	return clip(" "+short, w)
 }

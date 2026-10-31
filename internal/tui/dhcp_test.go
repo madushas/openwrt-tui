@@ -42,7 +42,8 @@ func TestDHCPListsPoolsAndStaticLeases(t *testing.T) {
 
 func TestDHCPReadOnlyStagesNothing(t *testing.T) {
 	a := newApp(t, true)
-	press(t, a, tab(a, "DHCP"), "n")
+	openTab(t, a, "DHCP")
+	press(t, a, "n")
 	if dhcpOf(t, a).form != nil || a.env.Staged.Len() != 0 {
 		t.Fatal("read-only mode opened a form")
 	}
@@ -93,7 +94,8 @@ func TestMakeActiveLeaseStatic(t *testing.T) {
 
 func TestStaticLeaseRejectsBadAndDuplicateInput(t *testing.T) {
 	a := newApp(t, false)
-	press(t, a, tab(a, "DHCP"), "n")
+	openTab(t, a, "DHCP")
+	press(t, a, "n")
 	d := dhcpOf(t, a)
 	f := d.form
 	set := func(i int, v string) { f.fields[i].Value = v }

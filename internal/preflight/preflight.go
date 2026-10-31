@@ -76,6 +76,7 @@ func run(before, after []uci.Config, ctx Context) []Finding {
 	out = append(out, ports(after)...)
 	out = append(out, wifiKeys(after)...)
 	out = append(out, zones(after)...)
+	out = append(out, extra(before, after, ctx)...)
 	return out
 }
 

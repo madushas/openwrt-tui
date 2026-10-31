@@ -131,7 +131,8 @@ func TestEveryScreenFitsTheTerminal(t *testing.T) {
 // holds the demo private key.
 func openSecretSection(t *testing.T, a *App) {
 	t.Helper()
-	press(t, a, tab(a, "Config"), "enter") // network
+	openTab(t, a, "Config")
+	press(t, a, "enter") // network
 	u := scr(a, "Config").(*uciScreen)
 	for i, s := range u.sections() {
 		for _, o := range s.Options {
@@ -208,7 +209,8 @@ func TestApplyAsksBeforeSending(t *testing.T) {
 	a := newApp(t, false)
 	openSecretSection(t, a)
 	press(t, a, "e", "x", "enter") // stage something
-	press(t, a, tab(a, "Changes"), "a")
+	openTab(t, a, "Changes")
+	press(t, a, "a")
 	if a.ask == nil {
 		t.Fatal("apply did not ask for confirmation")
 	}

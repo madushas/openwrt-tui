@@ -52,7 +52,7 @@ func (e *env) snapshot(ctx context.Context) *history.Entry {
 		Configs: map[string]string{},
 	}
 	for _, it := range e.Staged.Items() {
-		ent.Summary = append(ent.Summary, it.Describe())
+		ent.Summary = append(ent.Summary, describe(it))
 	}
 	for _, name := range e.Staged.Configs() {
 		for _, c := range cfgs {

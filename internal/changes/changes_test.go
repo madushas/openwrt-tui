@@ -114,3 +114,51 @@ func TestScriptRejectsBadID(t *testing.T) {
 		t.Fatal("empty set accepted")
 	}
 }
+
+func TestReorder(t *testing.T) {
+	c := Change{Op: OpReorder, Config: "firewall", Section: "@rule[1]", Value: "3"}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Command(); got != "uci reorder 'firewall.@rule[1]=3'" && got != "uci reorder firewall.@rule[1]=3" {
+		t.Fatalf("command %q", got)
+	}
+	if !strings.Contains(c.Describe(), "moved to position 3") {
+		t.Fatal(c.Describe())
+	}
+	for _, bad := range []Change{
+		{Op: OpReorder, Config: "firewall", Section: "@rule[1]", Value: "-1"},
+		{Op: OpReorder, Config: "firewall", Section: "@rule[1]", Value: "x; reboot"},
+		{Op: OpReorder, Config: "firewall", Section: "@rule[1]", Option: "name", Value: "1"},
+		{Op: OpReorder, Config: "firewall", Section: "@rule[1]", Value: "99999999"},
+	} {
+		if bad.Validate() == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+}
+
+func TestReorderCannotMixWithOtherEditsOnTheSameFile(t *testing.T) {
+	var s Set
+	if err := s.Add(Change{Op: OpSet, Config: "firewall", Section: "@rule[0]", Option: "enabled", Value: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Add(Change{Op: OpReorder, Config: "firewall", Section: "@rule[1]", Value: "0"}); err == nil {
+		t.Fatal("reorder accepted next to other firewall edits")
+	}
+	// another file is independent
+	if err := s.Add(Change{Op: OpReorder, Config: "dhcp", Section: "@host[1]", Value: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	var r Set
+	r.Add(Change{Op: OpReorder, Config: "firewall", Section: "@rule[1]", Value: "2"})
+	if err := r.Add(Change{Op: OpSet, Config: "firewall", Section: "@rule[0]", Option: "enabled", Value: "0"}); err == nil {
+		t.Fatal("edit accepted next to a staged reorder")
+	}
+	if err := r.Add(Change{Op: OpReorder, Config: "firewall", Section: "@rule[2]", Value: "1"}); err == nil {
+		t.Fatal("second reorder accepted before the first was applied")
+	}
+	if err := r.Add(Change{Op: OpReorder, Config: "firewall", Section: "@rule[1]", Value: "4"}); err != nil || r.Len() != 1 {
+		t.Fatalf("re-staging the same section should replace it: %v %d", err, r.Len())
+	}
+}

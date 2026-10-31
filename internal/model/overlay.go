@@ -6,6 +6,7 @@ package model
 import (
 	"github.com/madushakv/owrt-tui/internal/changes"
 	"github.com/madushakv/owrt-tui/internal/uci"
+	"strconv"
 )
 
 // Overlay returns a copy of cfgs with the staged changes applied in the order
@@ -71,6 +72,20 @@ func apply(cfgs []uci.Config, ch changes.Change) []uci.Config {
 		return cfgs
 	}
 	if si < 0 {
+		return cfgs
+	}
+	if ch.Op == changes.OpReorder {
+		pos, err := strconv.Atoi(ch.Value)
+		if err != nil {
+			return cfgs
+		}
+		if pos >= len(c.Sections) {
+			pos = len(c.Sections) - 1
+		}
+		sec := c.Sections[si]
+		rest := append(append([]uci.Section{}, c.Sections[:si]...), c.Sections[si+1:]...)
+		c.Sections = append(append(append([]uci.Section{}, rest[:pos]...), sec), rest[pos:]...)
+		reindex(c)
 		return cfgs
 	}
 	s := &c.Sections[si]

@@ -47,16 +47,38 @@ type Facts struct {
 	Cron           []string
 	Services       []services.Service
 	Release        string
+
+	// Phase 9 observations.
+	TempC      float64 // hottest thermal zone; valid when TempOK
+	TempOK     bool
+	WGKnown    bool // wg is installed, so Handshakes is meaningful
+	Now        int64
+	Handshakes []Handshake
+	LTE        *LTE
+	WanIP      string // the uplink's current IPv4 address (the interface of the default route), if known
+	UpDev      string // that interface's device name
+	UpBytes    int64  // bytes received plus sent on it since boot
 }
 
 // Input is what the rules look at.
 type Input struct {
 	Configs []uci.Config
 	Facts   Facts
+	Role    Role // RoleAuto = detect from the configuration
 }
 
 // Check runs every rule. Findings are most severe first, then by ID.
 func Check(in Input) []Finding {
+	out, _ := CheckRole(in)
+	return out
+}
+
+// CheckRole is Check that also reports the role it applied.
+func CheckRole(in Input) ([]Finding, Role) {
+	role := in.Role
+	if role == RoleAuto {
+		role = Detect(in.Configs, in.Facts)
+	}
 	var out []Finding
 	for _, r := range rules {
 		out = append(out, r(in)...)
@@ -67,12 +89,17 @@ func Check(in Input) []Finding {
 		}
 		return out[i].ID < out[j].ID
 	})
-	return out
+	if role == RoleCellular {
+		out = append(out, ruleCellularRole(in)...)
+	}
+	return applyRole(out, role), role
 }
 
 var rules = []func(Input) []Finding{
 	ruleDupList, ruleMultiZone, ruleOpenZone, ruleWanExposed, ruleCountry,
 	ruleSSH, ruleOverlay, ruleCron, ruleServices,
+	ruleTemp, ruleWGStale, ruleLTE,
+	ruleDanglingForward, ruleDupPolicy, ruleCellular,
 }
 
 func cfg(in Input, name string) (uci.Config, bool) {
@@ -139,14 +166,50 @@ func ruleDupList(in Input) []Finding {
 	return out
 }
 
+// wifiFacts describes the Wi-Fi networks attached to a network, as a sentence
+// (empty when none), so a finding can say whether anyone can just join.
+func wifiFacts(in Input, net string) string {
+	w, ok := cfg(in, "wireless")
+	if !ok {
+		return ""
+	}
+	var parts []string
+	for _, s := range w.Sections {
+		if s.Type != "wifi-iface" || opt(s, "mode") == "sta" {
+			continue
+		}
+		on := false
+		for _, n := range vals(s, "network") {
+			on = on || n == net
+		}
+		if !on {
+			continue
+		}
+		enc := opt(s, "encryption")
+		if enc == "" || enc == "none" {
+			parts = append(parts, fmt.Sprintf("Wi-Fi '%s' is OPEN (no password).", opt(s, "ssid")))
+		} else {
+			parts = append(parts, fmt.Sprintf("Wi-Fi '%s' uses a password (%s).", opt(s, "ssid"), enc))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ") + " "
+}
+
 func zoneNets(fw uci.Config) map[string][]string { // network -> zone names
 	m := map[string][]string{}
 	for _, s := range fw.Sections {
 		if s.Type != "zone" {
 			continue
 		}
+		seen := map[string]bool{} // a repeated entry is still one zone
 		for _, n := range vals(s, "network") {
-			m[n] = append(m[n], opt(s, "name"))
+			if !seen[n] {
+				seen[n] = true
+				m[n] = append(m[n], opt(s, "name"))
+			}
 		}
 	}
 	return m
@@ -166,10 +229,16 @@ func ruleMultiZone(in Input) []Finding {
 	sort.Strings(names)
 	for _, n := range names {
 		if z := nets[n]; len(z) > 1 {
+			sev, wifi := Warn, wifiFacts(in, n)
+			if strings.Contains(wifi, "OPEN") {
+				sev = Bad
+			}
 			out = append(out, Finding{
-				ID: "multi-zone:" + n, Sev: Bad,
-				Title:  fmt.Sprintf("interface '%s' is in %d firewall zones", n, len(z)),
-				Detail: fmt.Sprintf("zones %s. Only one zone's rules can apply; traffic policy for it is unpredictable. Remove it from all but one zone (Config > firewall).", strings.Join(z, ", ")),
+				ID: "multi-zone:" + n, Sev: sev,
+				Title: fmt.Sprintf("network '%s' is in %d firewall zones", n, len(z)),
+				Detail: fmt.Sprintf("Zones: %s. %sfw4 applies the rules of each zone the network is in, so the result is the most permissive mix and is hard to predict. "+
+					"If you want these clients to act like another network, keep it in that zone only; if you want it separate, keep it only in its own zone. "+
+					"If this is deliberate, press a to mark it as intended.", strings.Join(z, ", "), wifi),
 			})
 		}
 	}
@@ -201,10 +270,20 @@ func ruleOpenZone(in Input) []Finding {
 		if hasLan {
 			continue
 		}
+		var facts string
+		sev := Info
+		for _, n := range vals(s, "network") {
+			w := wifiFacts(in, n)
+			facts += w
+			if strings.Contains(w, "OPEN") {
+				sev = Warn // anyone can join and reach the router
+			}
+		}
 		f := Finding{
-			ID: "open-zone:" + name, Sev: Warn,
-			Title:  fmt.Sprintf("zone '%s' can reach the router (input ACCEPT)", name),
-			Detail: "Devices on this network can open the router's admin page and SSH. For a free/guest network the input policy should be REJECT, with rules allowing only DHCP and DNS.",
+			ID: "open-zone:" + name, Sev: sev,
+			Title: fmt.Sprintf("zone '%s' can reach the router (input ACCEPT)", name),
+			Detail: facts + "Devices on this network can open the router's admin page and SSH. That is normal for a network you trust; " +
+				"for a guest or public network the input policy should be REJECT, with rules allowing only DHCP and DNS. If it is deliberate, press a to mark it as intended.",
 		}
 		if allows(fw, name, "67") && allows(fw, name, "53") {
 			f.Fix = []changes.Change{{Op: changes.OpSet, Config: "firewall", Section: s.Ref(), Option: "input", Value: "REJECT", Old: opt(s, "input")}}

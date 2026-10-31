@@ -108,3 +108,22 @@ func TestDo(t *testing.T) {
 		t.Error("an invalid name must be rejected before any remote call")
 	}
 }
+
+// Real procd output from an OpenWrt 25.12 router: adblock and pbr are
+// one-shot services whose instance ended cleanly, which is not a crash.
+func TestOneShotServicesAreNotStopped(t *testing.T) {
+	js := `{"adblock":{"instances":{"adblock":{"running":false,"exit_code":0}}},
+"pbr":{"instances":{"main":{"running":false,"exit_code":0}}},
+"crashy":{"instances":{"i":{"running":false,"exit_code":1}}},
+"gone":{"instances":{"i":{"running":false}}},
+"cron":{"instances":{"instance1":{"running":true,"pid":1234}}}}`
+	got := parseProcd(js)
+	for _, n := range []string{"adblock", "pbr"} {
+		if _, ok := got[n]; ok {
+			t.Errorf("%s: clean one-shot exit must not be reported (got %v)", n, got[n])
+		}
+	}
+	if got["crashy"] != Stopped || got["gone"] != Stopped || got["cron"] != Running {
+		t.Errorf("states wrong: %v", got)
+	}
+}

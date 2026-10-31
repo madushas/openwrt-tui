@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,6 +14,7 @@ import (
 // RunConnect starts the TUI on a Connect screen. It finds or asks for the
 // router, helps fix connection problems, then switches to the main screens.
 func RunConnect(ctx context.Context, o ConnectOpts) error {
+	SetIcons(os.Getenv("OWRT_TUI_ICONS"))
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	r := &Root{ctx: ctx, opts: o, c: newConnect(ctx, o), w: 80, h: 24}
@@ -89,7 +91,7 @@ func (r *Root) View() tea.View {
 	if r.app != nil {
 		return r.app.View()
 	}
-	v := tea.NewView(r.render())
+	v := tea.NewView(finish(r.render()))
 	v.AltScreen = true
 	v.WindowTitle = "owrt-tui"
 	return v

@@ -194,16 +194,21 @@ func (f *form) Update(m tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// View draws the form in w x h.
+// View draws the form in w x h. When the form is taller than the space, it
+// scrolls so the selected field (with its hint and error) is always visible.
 func (f *form) View(w, h int) string {
-	var b strings.Builder
-	b.WriteString("  " + sBold.Render(f.Title) + "\n\n")
 	lw := 0
 	for _, fl := range f.fields {
 		if n := len(fl.Label); n > lw {
 			lw = n
 		}
 	}
+	indent := strings.Repeat(" ", lw+6)
+	textW := w - lw - 8
+	if textW < 16 {
+		textW = 16
+	}
+	blocks := make([][]string, len(f.fields))
 	for i, fl := range f.fields {
 		val := fl.Value
 		switch fl.Kind {
@@ -234,15 +239,68 @@ func (f *form) View(w, h int) string {
 		if fl.Value != fl.Orig {
 			line += " " + sWarn.Render("●")
 		}
+		blk := []string{line}
+		// Errors and hints go on their own wrapped lines, so they are never cut off.
 		if fl.err != "" {
-			line += "  " + sBad.Render(fl.err)
+			for _, l := range wrap(fl.err, textW) {
+				blk = append(blk, indent+sBad.Render(l))
+			}
 		}
-		b.WriteString(line + "\n")
 		if i == f.cur && fl.Hint != "" {
-			b.WriteString("  " + strings.Repeat(" ", lw+2) + sDim.Render(fl.Hint) + "\n")
+			for _, l := range wrap(fl.Hint, textW) {
+				blk = append(blk, indent+sDim.Render(l))
+			}
+		}
+		blocks[i] = blk
+	}
+	footer := "\n  " + sDim.Render(clip("enter edit/toggle   s stage changes   esc cancel   ● = changed", w-4)) + "\n"
+	head := "  " + sBold.Render(clip(f.Title, w-4)) + "\n\n"
+	avail := h - 2 - 2 // title block and footer block
+	start := 0
+	all := 0
+	for _, blk := range blocks {
+		all += len(blk)
+	}
+	if all > avail && f.cur >= 0 && f.cur < len(blocks) {
+		limit := avail - 2 // room for the "more above" and "more below" markers
+		for start = 0; start < f.cur; start++ {
+			used := 0
+			for _, b := range blocks[start : f.cur+1] {
+				used += len(b)
+			}
+			if used <= limit {
+				break
+			}
 		}
 	}
-	b.WriteString("\n  " + sDim.Render("enter edit/toggle   s stage changes   esc cancel   ● = changed") + "\n")
+	var b strings.Builder
+	b.WriteString(head)
+	if start > 0 {
+		b.WriteString("  " + sDim.Render(fmt.Sprintf("↑ %d more above", start)) + "\n")
+		avail--
+	}
+	total := 0
+	for _, blk := range blocks[start:] {
+		total += len(blk)
+	}
+	more := total > avail
+	if more {
+		avail-- // room for the "more below" marker
+	}
+	shown := 0
+	for i := start; i < len(blocks); i++ {
+		if shown+len(blocks[i]) > avail && i > f.cur {
+			break
+		}
+		for _, l := range blocks[i] {
+			b.WriteString(l + "\n")
+		}
+		shown += len(blocks[i])
+	}
+	if more {
+		b.WriteString("  " + sDim.Render("↓ more below") + "\n")
+	}
+	b.WriteString(footer)
 	return fitLines(b.String(), w, h)
 }
 

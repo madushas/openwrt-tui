@@ -21,6 +21,10 @@ type env struct {
 	Staged  *changes.Set
 	Timeout time.Duration
 
+	// Counts of problems and warnings from the last Health check, shown in the
+	// header. Only touched from the UI goroutine.
+	alertBad, alertWarn int
+
 	hist     *history.Store
 	histOnce sync.Once
 

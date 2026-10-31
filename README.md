@@ -4,7 +4,7 @@ A terminal UI for managing OpenWrt routers over SSH. Agentless: nothing is
 installed on the router. Targets OpenWrt 25.12 (apk) with an opkg backend for
 24.10 and older.
 
-## Status: Phase 6 (clients)
+## Status: Phase 10 (reach and polish)
 
 | Piece | State |
 |---|---|
@@ -166,3 +166,75 @@ static, `b` block/unblock (a firewall rule named `owrt_block_<mac>`; the device 
 router), `v` route through the VPN or WAN (needs pbr; creates policy `owrt_route_<mac>`), `k` kick from
 Wi-Fi, `w` wake-on-LAN (needs `etherwake` on the router). Name/static/block/route are staged changes;
 kick and wake are immediate and confirmed.
+
+## Tasks (phase 7)
+
+Guided jobs that stage ordinary changes (so preflight, rollback and smart confirm still apply):
+- **Guest / free Wi-Fi**: new interface and subnet, DHCP, a firewall zone that rejects input and forward
+  (only DHCP and DNS are allowed to the router; the only forwarding is to wan), and the SSID with
+  optional client isolation. Refuses a name, subnet or SSID that clashes with what exists.
+- **Port forward**: checks the address and ports, refuses a duplicate external port, warns about SSH,
+  web, RDP and file-sharing ports.
+- **Upstream DNS**: Cloudflare, Quad9, Google or AdGuard; warns if adblock or https-dns-proxy is present.
+
+- **WireGuard server / add a device / client.** Keys are generated on your PC (checked against the RFC 7748
+  test vector). A device's config is shown once as a QR code you scan with the WireGuard app (the QR encoder
+  is built in and was verified against a reference encoder and by decoding); its private key is never sent
+  to the router and is stored only if you press `w` (a private 0600 file). The client wizard warns when a
+  second tunnel would also claim the default route (use pbr to split clients).
+- **Wi-Fi schedule / scheduled reboot / Cron screen.** Edits the root crontab: your other lines are
+  untouched, the old crontab is kept in `/tmp/owrt-tui` on the router, cron is enabled and restarted, and
+  the result is read back and compared. The Wi-Fi schedule uses `wifi down/up <radio>` (runtime only, no
+  flash writes). Frequent jobs that write to flash are flagged. Cron changes are not UCI, so they do not
+  go through the Changes screen: each one is confirmed on its own.
+- **Back up to this PC**: `sysupgrade -b` archive, validated, stored under your config dir (0700/0600).
+- **Safe package upgrade** (apk only): flash-space check, backup first, upgrade, health compared before and
+  after. **Firmware image check** runs `sysupgrade -T` on an image you uploaded. owrt-tui does *not* flash
+  firmware: a failed flash cannot be rolled back remotely.
+
+## Network and firewall editors (phase 8)
+
+The Network screen has sections; `[` and `]` move between them: **Interfaces, Bridges, VLANs, Routes, Zones,
+Forwards, Rules, Port fwd**. In each: `enter` edit, `n` new, `d` delete, `t` switch a rule or forward off/on.
+Everything is staged on the Changes screen first, and a long list (ports, networks) is rewritten the way UCI
+needs (delete + add_list).
+
+- **Interfaces**: create static, DHCP, DHCPv6, PPPoE or unmanaged interfaces, optionally put them in a firewall
+  zone and start a DHCP pool. Deleting one also removes it from firewall zones and deletes its DHCP pool and
+  routes; Wi-Fi networks attached to it are reported, not changed. WireGuard interfaces are managed under Tasks.
+- **Bridges / VLANs**: a port cannot be in two bridges; deleting a bridge is refused while an interface uses it.
+- **Routes**: shows the router's live routing table under the configured routes.
+- **Firewall**: zones (a zone that rules or forwards still use cannot be deleted), forwardings, rules (with
+  source/destination address, MAC, ports, action, family) and port forwards.
+
+Safety: the preflight rules added in this phase run on the *resulting* configuration. They force the rollback
+timer for changes to the ports or VLANs of the bridge your session uses, for a rule that rejects or drops the
+management zone's traffic to the router, and for any static default route. They also flag references to zones
+or interfaces that do not exist, duplicate zones, duplicate VLANs or routes, and gateways outside their
+interface's network.
+
+Not covered yet: IPv6 route editing, ip rules (policy routing outside pbr), and re-ordering firewall rules
+(new rules are appended).
+
+## Icons and ASCII mode
+
+The sidebar uses Unicode symbols. On the Linux console, PuTTY with a non-UTF-8
+character set, or any terminal without those glyphs, the UI switches to plain
+ASCII automatically (non-UTF-8 locale, or `TERM=linux`/`dumb`). Force it with
+`-icons ascii` (or `OWRT_TUI_ICONS=ascii`); `-icons unicode` forces Unicode.
+In ASCII mode borders become `+-|`, bars `#`, and the WireGuard QR code is drawn
+with coloured spaces instead of half-block characters. For PuTTY, the nicest
+result is Window > Translation > UTF-8 plus a font such as DejaVu Sans Mono.
+
+## Observability
+
+- **Events** turns the system log into a timeline: devices joining and leaving Wi-Fi, DHCP leases, interfaces and links going up and down, SSH logins (failed ones in red, with a banner for repeated failures), cron runs and reboots. `f` cycles the filter.
+- **Clients** has a TRAFFIC column. It reads the connection-tracking table, so it shows what open connections have moved. Press `g` twice for live rates and `t` to sort by usage. If byte counting is off the screen shows the one command that turns it on (`sysctl -w net.netfilter.nf_conntrack_acct=1`).
+- **Health** also watches temperature, stale outbound WireGuard tunnels, and cellular signal. The header shows `▲ n alert(s)` after a Health check finds problems or warnings.
+
+## More
+
+- [Guide](docs/GUIDE.md): every screen and key, and how changes stay safe
+- [Several routers](docs/ROUTERS.md): saved profiles and `compare`
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- Releases: push a tag like `v0.1.0`; GitHub Actions builds archives for Linux (amd64, arm64, arm, mipsle), macOS and Windows and publishes them with `SHA256SUMS`. Locally: `make release VERSION=v0.1.0`. Verify a download with `sha256sum -c SHA256SUMS --ignore-missing`.

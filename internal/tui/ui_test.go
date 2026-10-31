@@ -403,7 +403,8 @@ func TestFooterShowsKeyHints(t *testing.T) {
 func TestHelpListsScreenKeys(t *testing.T) {
 	a := newApp(t, true)
 	a.Update(tea.WindowSizeMsg{Width: 130, Height: 40})
-	press(t, a, tab(a, "Services"), "?")
+	openTab(t, a, "Services")
+	press(t, a, "?")
 	v := plain(a.render())
 	if !a.help || !strings.Contains(v, "Services") || !strings.Contains(v, "restart") || !strings.Contains(v, "command palette") {
 		t.Fatalf("help missing content:\n%s", v)
