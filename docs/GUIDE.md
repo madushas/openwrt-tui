@@ -51,3 +51,54 @@ Firmware flashing is deliberately not automated; the Tasks screen only checks an
 ## Terminals
 
 Mouse, 256 colours and a UTF-8 font give the best result. Without UTF-8 (Linux console, PuTTY with a legacy character set) the UI switches to ASCII automatically; force it with `-icons ascii` or `OWRT_TUI_ICONS=ascii`. In PuTTY: Window > Translation > UTF-8 and a font such as DejaVu Sans Mono.
+
+## SIM for one domain (Tasks > SIM / cellular)
+
+Use this when one site needs its own mobile network while everything else uses the main
+internet. The wizard creates (or reuses) the modem interface, adds it to the `wan` firewall
+zone for NAT, and adds a `pbr` policy that sends only the domains you list through it.
+
+Needs: the `pbr` package, `dnsmasq-full` (plain dnsmasq cannot track domains), and a modem
+driver (`kmod-usb-net-*`, plus `uqmi` for qmi or `comgt-ncm` for ncm). The SIM interface gets
+`peerdns 0` (your upstream DNS is kept) and metric 200 (the main link stays preferred). If the
+main link drops, other traffic can fall back to the SIM and use data.
+
+## Cron templates (Tasks > Cron templates)
+
+Reconnect an interface when a ping through it fails, restart WireGuard when its handshake is
+older than 5 minutes, restart or reload a service daily, reload Wi-Fi daily, keep a RAM copy of
+the log. Jobs only write to /tmp, and each is tagged so it can't be added twice.
+
+## Marking a Health finding as intended
+
+Some findings describe choices you made on purpose (for example a 5 GHz network that shares
+the `lan` zone). Press `a` on a finding to mark it as intended; it moves to the accepted list
+(`A`) and no longer counts as an alert. The mark is stored per router on this PC and is tied
+to the finding's exact wording: if the configuration changes so the finding changes (say the
+Wi-Fi becomes open), it comes back. Findings now state the facts they rest on, such as
+whether the Wi-Fi has a password, and only become problems when anyone can join.
+
+## Device role (Health, key r)
+
+The Health header shows the role the checks assume: router (WAN faces the internet),
+firewall/VPN behind another router, access point only, or Wi-Fi repeater. It is detected from
+the configuration and the WAN address (a private WAN address means another router is
+upstream). Press r to pin a different role; it is stored per router. An access point or
+repeater hides firewall findings; a firewall behind another router treats WAN port forwards as
+notes, since they are only reachable from the upstream network.
+
+## SIM modes
+
+Tasks > SIM / cellular asks what uses the SIM: only listed domains, only listed devices (IPs,
+networks or MACs), or nothing except as a backup when the main link is down.
+
+## SIM-only routers
+
+If the router's only internet is a SIM (the modem interface is in the `wan` zone and the
+default route is on a modem device such as wwan0), Health uses the "router on a SIM/cellular
+uplink" role. Everything else (Wi-Fi, DHCP, firewall, WireGuard client, tasks, cron) works as
+on any router. Extra checks for this role: data used since boot, a note when the carrier uses
+carrier-grade NAT (100.64.0.0/10, so nothing can connect in), a note about WireGuard servers
+on SIM links, and port-forward findings explain that carriers usually block inbound
+connections. The role is chosen from the default route's device; a USB-tethered phone (usb0)
+is treated as cellular too. If the guess is wrong, press r on Health to pin a role.

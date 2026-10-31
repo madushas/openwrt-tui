@@ -98,7 +98,7 @@ var (
 	reDHCP  = regexp.MustCompile(`^DHCPACK\((\S+)\) (\S+) ([0-9a-fA-F:]{17}) ?(\S*)`)
 	reIface = regexp.MustCompile(`^Interface '([^']+)' (is now up|is now down|has link connectivity loss|is disabled|is setting up now)`)
 	reLink  = regexp.MustCompile(`^Network device '([^']+)' link is (up|down)`)
-	reOK    = regexp.MustCompile(`^(?:Pubkey|Password) auth succeeded for '([^']+)'(?: with key.*)? from (\S+)`)
+	reOK    = regexp.MustCompile(`^(?:Pubkey|Password) auth succeeded for '([^']+)'(?: with .*?)? from (\S+)`)
 	reBad   = regexp.MustCompile(`^(?:Bad password attempt|Login attempt for nonexistent user)(?: for)? '?([^' ]*)'? from (\S+)`)
 	reCron  = regexp.MustCompile(`^USER (\S+) pid \d+ cmd (.*)$`)
 )

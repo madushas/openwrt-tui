@@ -104,7 +104,8 @@ func parseProcd(js string) map[string]State {
 	out := map[string]State{}
 	var raw map[string]struct {
 		Instances map[string]struct {
-			Running bool `json:"running"`
+			Running  bool `json:"running"`
+			ExitCode *int `json:"exit_code"`
 		} `json:"instances"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(js)), &raw); err != nil {
@@ -114,12 +115,24 @@ func parseProcd(js string) map[string]State {
 		if len(svc.Instances) == 0 {
 			continue
 		}
-		st := Stopped
+		// One-shot services (adblock, pbr) leave an instance that ended
+		// cleanly (running false, exit_code 0). That is "done", not crashed,
+		// so it stays Unknown rather than Stopped.
+		st, failed := Unknown, false
 		for _, in := range svc.Instances {
 			if in.Running {
 				st = Running
 				break
 			}
+			if in.ExitCode == nil || *in.ExitCode != 0 {
+				failed = true
+			}
+		}
+		if st != Running && failed {
+			st = Stopped
+		}
+		if st == Unknown {
+			continue
 		}
 		out[name] = st
 	}

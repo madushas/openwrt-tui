@@ -109,3 +109,13 @@ func TestNoiseIgnored(t *testing.T) {
 		}
 	}
 }
+
+func TestRealDropbearPubkeyLine(t *testing.T) {
+	m := "Pubkey auth succeeded for 'root' with ssh-ed25519 key SHA256:abc123 from 192.168.10.199:39836"
+	if !reOK.MatchString(m) {
+		t.Fatalf("real 25.12 dropbear line not matched: %q", m)
+	}
+	if !reOK.MatchString("Password auth succeeded for 'root' from 10.0.0.2:5555") {
+		t.Fatal("password form regressed")
+	}
+}

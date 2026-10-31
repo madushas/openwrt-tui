@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/madushakv/owrt-tui/internal/uci"
 	"strings"
 	"testing"
 )
@@ -157,4 +158,46 @@ func qrEncodeForTest(s string) (int, error) {
 		return 0, err
 	}
 	return len(c.Modules), nil
+}
+
+// A router whose only WireGuard interface is a client (no listen_port) used to
+// do nothing at all on Enter. It must say why.
+func TestPeerWizardExplainsMissingServer(t *testing.T) {
+	withStore(t)
+	a := writeApp(t)
+	ts := startTask(t, a, "wgpeer")
+	ts.form, ts.info = nil, nil
+	cfgs, _ := uci.ParseExport("package network\nconfig interface 'eduvpn'\n\toption proto 'wireguard'\n\toption private_key 'x'\n")
+	ts.cfgs = cfgs
+	ts.note = nil
+	ts.Update(tasksCfgMsg{key: "wgpeer", cfgs: cfgs})
+	if ts.form != nil || ts.info == nil || !strings.Contains(strings.Join(ts.info, " "), "no WireGuard server") {
+		t.Fatalf("no explanation: form=%v info=%v", ts.form, ts.info)
+	}
+}
+
+func TestQRNeverSilentlyMissing(t *testing.T) {
+	c, err := qrEncode(strings.Repeat("A", 280))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := &tasksScreen{info: []string{"first", "second", "third"}, qrc: c}
+	if v := ts.infoView(100, 50); !strings.Contains(v, "█") && !strings.Contains(v, "▀") && !strings.Contains(v, "▄") {
+		t.Errorf("QR not drawn in a large terminal:\n%s", v)
+	}
+	if v := ts.infoView(40, 12); !strings.Contains(v, "needs a terminal") {
+		t.Errorf("small terminal gave no explanation:\n%s", v)
+	}
+}
+
+func TestSIMAndCronTemplateWizardsOpen(t *testing.T) {
+	withStore(t)
+	a := writeApp(t)
+	for _, k := range []string{"sim", "crontpl"} {
+		ts := startTask(t, a, k)
+		if ts.form == nil && ts.info == nil {
+			t.Errorf("%s: Enter did nothing", k)
+		}
+		press(t, a, "esc")
+	}
 }

@@ -95,3 +95,28 @@ func TestPresetsAndHelpers(t *testing.T) {
 		t.Fatal("Frequent")
 	}
 }
+
+func TestTemplates(t *testing.T) {
+	s, c, tag, err := WGWatchdog("eduvpn", 5)
+	if err != nil || s != "*/5 * * * *" || tag != "wg-watchdog-eduvpn" || !strings.Contains(c, `date +\%s`) {
+		t.Fatalf("%q %q %q %v", s, c, tag, err)
+	}
+	if _, err := Add("", s, c, tag); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := Reconnect("sim; reboot", "1.1.1.1", 5); err == nil {
+		t.Fatal("injection in interface name accepted")
+	}
+	if _, _, _, err := Reconnect("sim", "1.1.1.1;reboot", 5); err == nil {
+		t.Fatal("injection in target accepted")
+	}
+	if _, _, _, err := RestartService("../x", "restart", 3, 0); err == nil {
+		t.Fatal("bad service accepted")
+	}
+	if _, _, _, err := RestartService("adblock", "stop", 3, 0); err == nil {
+		t.Fatal("bad action accepted")
+	}
+	if s, c, _, _ := Reconnect("sim", "1.1.1.1", 5); !strings.Contains(c, "ifup sim") || s != "*/5 * * * *" {
+		t.Fatal(c)
+	}
+}

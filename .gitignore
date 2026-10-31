@@ -22,3 +22,8 @@ vendor/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Local phase/archive artifacts
+PHASES.md
+.rolledback
+scripts/collect.sh

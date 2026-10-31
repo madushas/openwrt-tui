@@ -1,0 +1,42 @@
+package network
+config interface 'lan'
+	option device 'br-lan'
+	option proto 'static'
+	option ipaddr '192.168.8.1'
+	option netmask '255.255.255.0'
+config interface 'wwan'
+	option proto 'qmi'
+	option device '/dev/cdc-wdm0'
+	option apn 'internet'
+	option pdptype 'ipv4'
+package firewall
+config zone
+	option name 'lan'
+	list network 'lan'
+	option input 'ACCEPT'
+	option output 'ACCEPT'
+	option forward 'ACCEPT'
+config zone
+	option name 'wan'
+	list network 'wwan'
+	option input 'REJECT'
+	option output 'ACCEPT'
+	option forward 'REJECT'
+	option masq '1'
+config forwarding
+	option src 'lan'
+	option dest 'wan'
+config redirect
+	option name 'cam'
+	option src 'wan'
+	option src_dport '22'
+	option dest_ip '192.168.8.50'
+	option dest_port '22'
+	option target 'DNAT'
+package wireless
+config wifi-iface 'w'
+	option device 'radio0'
+	option mode 'ap'
+	option network 'lan'
+	option ssid 'Mobile'
+	option encryption 'psk2'

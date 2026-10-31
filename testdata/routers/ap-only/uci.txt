@@ -1,0 +1,15 @@
+package network
+config interface 'lan'
+	option device 'br-lan'
+	option proto 'dhcp'
+package dhcp
+config dhcp 'lan'
+	option interface 'lan'
+	option ignore '1'
+package wireless
+config wifi-iface 'w'
+	option device 'radio0'
+	option mode 'ap'
+	option network 'lan'
+	option ssid 'Office'
+	option encryption 'psk2'

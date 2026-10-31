@@ -18,6 +18,7 @@ import (
 	"github.com/madushakv/owrt-tui/internal/discover"
 	"github.com/madushakv/owrt-tui/internal/postcheck"
 	"github.com/madushakv/owrt-tui/internal/qr"
+	"github.com/madushakv/owrt-tui/internal/tasks"
 	"github.com/madushakv/owrt-tui/internal/uci"
 	"github.com/madushakv/owrt-tui/internal/validate"
 	"github.com/madushakv/owrt-tui/internal/wg"
@@ -82,7 +83,11 @@ func saveWGConfig(router, name, conf string) (string, error) {
 
 func (t *tasksScreen) infoView(w, h int) string {
 	var b strings.Builder
-	for _, l := range t.info {
+	lines := t.info
+	if t.qrc != nil && len(lines) > 1 {
+		lines = lines[:1] // the code needs the room; the rest is in the warning below
+	}
+	for _, l := range lines {
 		b.WriteString("  " + clip(l, w-4) + "\n")
 	}
 	if t.qrc != nil {
@@ -91,8 +96,11 @@ func (t *tasksScreen) infoView(w, h int) string {
 		if asciiOn {
 			need, rows = 2*need, need
 		}
-		if w < need || h < rows+len(t.info)+1 {
-			b.WriteString("\n  " + sWarn.Render(fmt.Sprintf("The QR code needs a terminal of at least %d columns x %d rows; enlarge it and reopen, or press w to save the config as a file.", need, rows+len(t.info)+1)) + "\n")
+		if w < need || h < rows+len(lines)+1 {
+			for _, l := range wrap(fmt.Sprintf("The QR code needs a terminal of at least %d columns x %d rows (this one is %d x %d). Enlarge the window or zoom out (Ctrl and minus), then press any key and run the task again, or press w to save the config as a file and import it on the device.", need, rows+len(lines)+1, w, h), w-4) {
+				b.WriteString("\n  " + sWarn.Render(l))
+			}
+			b.WriteString("\n")
 		} else {
 			b.WriteString("\n")
 			txt := t.qrc.Text(2)
@@ -172,6 +180,12 @@ func (t *tasksScreen) openMore(key string) bool {
 		srv := wgServers(t.cfgs)
 		if len(srv) == 0 {
 			t.running = ""
+			t.note = []string{
+				"This router has no WireGuard server, so there is nothing to add a device to.",
+				"A server is a WireGuard interface that listens on a port (option listen_port). Interfaces that only connect out to a VPN provider are clients and cannot take devices.",
+				"",
+				"Run Tasks > 'WireGuard server' first, apply it, then come back here.",
+			}
 			return true
 		}
 		ep := ddnsHost(t.cfgs)
@@ -184,6 +198,42 @@ func (t *tasksScreen) openMore(key string) bool {
 			&field{Label: "Router's public address", Key: "endpoint", Value: ep, Required: true, Hint: "host:port the device will connect to (a DDNS name is best)"},
 			&field{Label: "Send all traffic via the router", Key: "full", Kind: kBool, Value: "1", Hint: "off = only the VPN and your LAN go through it"},
 			&field{Label: "DNS for the device", Key: "dns", Hint: "optional, e.g. the router's VPN address so ad blocking applies"},
+		)
+	case "sim":
+		name, proto, dev := "sim", "qmi", "/dev/cdc-wdm0"
+		for _, c := range t.cfgs {
+			if c.Name != "network" {
+				continue
+			}
+			for _, sc := range c.Sections { // reuse a leftover modem interface
+				p, _ := sc.Option("proto")
+				for _, sp := range tasks.SIMProtos {
+					if sc.Type == "interface" && p.Value() == sp && sc.Name != "" {
+						d, _ := sc.Option("device")
+						name, proto, dev = sc.Name, sp, d.Value()
+					}
+				}
+			}
+		}
+		t.form = newForm("SIM / cellular",
+			&field{Label: "Interface name", Key: "name", Value: name, Required: true, Hint: "an existing modem interface is reused and updated"},
+			&field{Label: "Modem protocol", Key: "proto", Kind: kChoice, Choices: tasks.SIMProtos, Value: proto, Hint: "qmi/mbim for /dev/cdc-wdm*, ncm or 3g for /dev/ttyUSB*, modemmanager if installed"},
+			&field{Label: "Modem device", Key: "dev", Value: dev, Required: true, Hint: "see Diagnostics > ls /dev"},
+			&field{Label: "APN", Key: "apn", Required: true, Hint: "from the SIM provider, e.g. internet"},
+			&field{Label: "APN user", Key: "user", Hint: "optional"},
+			&field{Label: "APN password", Key: "pass", Secret: true, Hint: "optional"},
+			&field{Label: "SIM PIN", Key: "pin", Secret: true, Hint: "optional; a wrong PIN can lock the SIM, so double-check"},
+			&field{Label: "What uses the SIM", Key: "mode", Kind: kChoice, Choices: tasks.SIMModes, Value: tasks.ViaDomains, Hint: "domains = only listed sites; sources = only listed devices; failover = backup for the main link"},
+			&field{Label: "Domains or devices", Key: "domains", Hint: "domains/IPs for 'domains' (example.com, 10.0.0.0/8); device IPs/MACs for 'sources'; empty for 'failover'"},
+		)
+	case "crontpl":
+		t.form = newForm("Cron template",
+			&field{Label: "Template", Key: "tpl", Kind: kChoice, Choices: cronTemplates, Value: cronTemplates[0]},
+			&field{Label: "Interface or service", Key: "name", Hint: "interface (sim, wan, eduvpn) or init script (adblock, dnsmasq)"},
+			&field{Label: "Ping target", Key: "target", Value: "1.1.1.1", Hint: "only for 'Reconnect'"},
+			&field{Label: "Every N minutes", Key: "every", Value: "5", Validate: validate.IntRange(2, 59), Hint: "for the watchdog templates"},
+			&field{Label: "Daily at (HH:MM)", Key: "at", Value: "04:30", Validate: validHHMM, Hint: "for the daily templates"},
+			&field{Label: "Service action", Key: "action", Kind: kChoice, Choices: []string{"restart", "reload"}, Value: "restart"},
 		)
 	case "wgclient":
 		t.form = newForm("WireGuard client",
@@ -272,6 +322,27 @@ func (t *tasksScreen) buildMore(f *form, key string) (tea.Cmd, bool) {
 		return func() tea.Msg {
 			return infoMsg{lines: lines, qrText: conf, saveConf: conf, saveName: val(f, "iface") + "-" + val(f, "name"), after: func() tea.Cmd { return gotoChanges }}
 		}, true
+	case "sim":
+		ch, warn, err := tasks.SIMRoute(tasks.SIM{Name: val(f, "name"), Proto: val(f, "proto"), Device: val(f, "dev"), APN: val(f, "apn"),
+			User: val(f, "user"), Pass: val(f, "pass"), PIN: val(f, "pin"), Domains: val(f, "domains"), Mode: val(f, "mode")}, t.cfgs)
+		if err != nil {
+			return toastErr(err), true
+		}
+		if err := t.stageAll(ch); err != nil {
+			return toastErr(err), true
+		}
+		lines := []string{fmt.Sprintf("SIM routing staged (%d changes). Review and apply it next.", len(ch)), ""}
+		for _, w := range warn {
+			lines = append(lines, "Note: "+w)
+		}
+		lines = append(lines, "", "After applying: check Network for the interface IP, then open a listed domain from a LAN device.")
+		return func() tea.Msg { return infoMsg{lines: lines, after: func() tea.Cmd { return gotoChanges }} }, true
+	case "crontpl":
+		sched, command, tag, err := t.cronTemplate(f)
+		if err != nil {
+			return toastErr(err), true
+		}
+		return t.cronAdd([][3]string{{sched, command, tag}}, "Add this job?\n"+sched+"  "+command), true
 	case "wgclient":
 		ch, pub, warn, err := wg.NewClient(wg.Client{Name: val(f, "name"), Address: val(f, "addr"), PeerPub: val(f, "peerpub"), Endpoint: val(f, "endpoint"), PSK: val(f, "psk"), PrivateKey: val(f, "priv"), FullTun: val(f, "full") != ""}, t.cfgs)
 		if err != nil {
@@ -444,3 +515,31 @@ func (t *tasksScreen) doUpgrade(ctx context.Context, n int) tea.Msg {
 }
 
 func qrEncode(s string) (*qr.Code, error) { return qr.Encode([]byte(s), qr.L) }
+
+var cronTemplates = []string{
+	"Reconnect an interface when a ping through it fails",
+	"Restart WireGuard when the handshake goes stale",
+	"Restart or reload a service every day",
+	"Reload Wi-Fi every day",
+	"Keep a RAM copy of the log (for after a crash)",
+}
+
+func (t *tasksScreen) cronTemplate(f *form) (string, string, string, error) {
+	every, _ := strconv.Atoi(val(f, "every"))
+	h, m := 0, 0
+	if val(f, "at") != "" {
+		h, m = splitHHMM(val(f, "at"))
+	}
+	switch val(f, "tpl") {
+	case cronTemplates[0]:
+		return cron.Reconnect(val(f, "name"), val(f, "target"), every)
+	case cronTemplates[1]:
+		return cron.WGWatchdog(val(f, "name"), every)
+	case cronTemplates[2]:
+		return cron.RestartService(val(f, "name"), val(f, "action"), h, m)
+	case cronTemplates[3]:
+		return cron.WifiRestart(h, m)
+	default:
+		return cron.LogSnapshot(every)
+	}
+}

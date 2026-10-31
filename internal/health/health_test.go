@@ -53,7 +53,7 @@ func TestDuplicateListFixKeepsEachValueOnce(t *testing.T) {
 func TestMultiZone(t *testing.T) {
 	c := parse(t, "package firewall\n\nconfig zone\n\toption name 'wan'\n\tlist network 'wwan'\n\nconfig zone\n\toption name 'vpn'\n\tlist network 'wwan'\n")
 	f := find(Check(Input{Configs: c, Facts: Facts{SSHKeys: -1}}), "multi-zone:wwan")
-	if f == nil || f.Sev != Bad || f.Fix != nil {
+	if f == nil || f.Sev != Warn || f.Fix != nil {
 		t.Fatalf("%+v", f)
 	}
 }
@@ -129,5 +129,14 @@ func TestFactsRules(t *testing.T) {
 func TestOrderingAndCleanRouter(t *testing.T) {
 	if fs := Check(Input{Facts: Facts{SSHKeys: -1}}); len(fs) != 0 {
 		t.Fatalf("%s", ids(fs))
+	}
+}
+
+func TestParseFactsWanIP(t *testing.T) {
+	if f := ParseFacts("##wanip\n192.168.1.2\n"); f.WanIP != "192.168.1.2" {
+		t.Fatalf("%q", f.WanIP)
+	}
+	if isPrivate4("172.32.0.1") || !isPrivate4("172.16.0.1") || isPrivate4("203.0.113.1") || isPrivate4("") {
+		t.Fatal("private range check wrong")
 	}
 }

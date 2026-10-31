@@ -217,7 +217,7 @@ func Router() *transport.Fake {
 	return (&transport.Fake{Name: "demo"}).
 		OnFunc("##owrt-metrics", metricsGen()).
 		On("##owrt-wifi-caps", wifiCaps).
-		On("##overlay", "##overlay\noverlayfs:/overlay 14000 6000 7000 46% /overlay\n##release\n25.12.3\n##sshkeys\n1\n##cron\n0 4 * * * reboot\n*/15 * * * * /usr/bin/ddns_update.sh >> /root/ddns.log 2>&1\n##temp\n58000\n61000\n##now\n1790000100\n##wg\nwgok\nwg0\tpubkey-phone\t1790000050\n##lte\n{\"type\":\"lte\",\"rssi\":-78,\"rsrq\":-11,\"rsrp\":-108,\"snr\":4.2}\n").
+		On("##overlay", "##overlay\noverlayfs:/overlay 14000 6000 7000 46% /overlay\n##release\n25.12.3\n##sshkeys\n1\n##cron\n0 4 * * * reboot\n*/15 * * * * /usr/bin/ddns_update.sh >> /root/ddns.log 2>&1\n##temp\n58000\n61000\n##now\n1790000100\n##wg\nwgok\nwg0\tpubkey-phone\t1790000050\n##wanip\n203.0.113.50\n##updev\nwan\n##lte\n{\"type\":\"lte\",\"rssi\":-78,\"rsrq\":-11,\"rsrp\":-108,\"snr\":4.2}\n").
 		OnFunc("##acct", trafficGen()).
 		On("##leases", "##leases\n1790000000 aa:bb:cc:00:00:01 192.168.1.50 pixel-8 01:aa\n1790000000 aa:bb:cc:00:00:02 192.168.1.51 laptop *\n1790000000 aa:bb:cc:00:00:04 192.168.1.60 printer *\n##neigh\n192.168.1.50 dev br-lan lladdr aa:bb:cc:00:00:01 REACHABLE\n192.168.1.51 dev br-lan lladdr aa:bb:cc:00:00:02 STALE\n192.168.1.60 dev br-lan lladdr aa:bb:cc:00:00:04 REACHABLE\n##sta phy0-ap0\nStation aa:bb:cc:00:00:01 (on phy0-ap0)\n\tinactive time:\t40 ms\n\trx bytes:\t5123456\n\ttx bytes:\t90654321\n\tsignal:  \t-52 [-52] dBm\n\tconnected time:\t3600 seconds\n").
 		On("ubus call hostapd.", "").

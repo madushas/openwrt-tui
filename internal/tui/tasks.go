@@ -26,6 +26,8 @@ var taskList = []taskItem{
 	{"wgclient", "WireGuard client (VPN provider)", "Connect the router to a VPN provider or another WireGuard server."},
 	{"wifisched", "Wi-Fi schedule", "Switch a radio off at night and on in the morning (runtime only; nothing written to flash)."},
 	{"reboot", "Scheduled reboot", "Reboot at a set time, every day or weekly."},
+	{"sim", "SIM / cellular (domains, devices or failover)", "Set up a modem interface and choose what uses it: only listed domains, only listed devices, or as a backup when the main link fails."},
+	{"crontpl", "Cron templates (watchdogs and housekeeping)", "Ready-made jobs: reconnect a link when it fails, restart WireGuard when it goes stale, restart a service or Wi-Fi on a schedule."},
 	{"cronjobs", "Cron jobs", "See, switch off and remove scheduled jobs, or add your own."},
 	{"backup", "Back up the configuration to this PC", "Downloads a restorable archive. It contains passwords and keys, so it is stored privately."},
 	{"upgrade", "Safe package upgrade", "Checks flash space, takes a backup, upgrades, then checks the router is still healthy."},
@@ -45,6 +47,7 @@ type tasksScreen struct {
 	saveConf string // client config text the user can save with w
 	saveName string
 	after    func() tea.Cmd
+	note     []string // why a wizard could not open, shown instead of nothing
 }
 
 func newTasks(e *env) *tasksScreen { return &tasksScreen{e: e} }
@@ -79,7 +82,12 @@ func (t *tasksScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 			return t, toastErr(m.err)
 		}
 		t.cfgs = m.cfgs
+		t.note = nil
 		t.open(m.key)
+		if t.form == nil && t.note != nil {
+			t.showInfo(infoMsg{lines: t.note})
+			t.note = nil
+		}
 	case infoMsg:
 		t.showInfo(m)
 	case tea.KeyPressMsg:
@@ -162,6 +170,7 @@ func (t *tasksScreen) open(key string) {
 		radios := t.radios()
 		if len(radios) == 0 {
 			t.form, t.running = nil, ""
+			t.note = []string{"No Wi-Fi radio was found in /etc/config/wireless, so there is nothing to host a guest SSID.", "Add a radio first (Wi-Fi screen), then try again."}
 			return
 		}
 		t.form = newForm("Guest network",

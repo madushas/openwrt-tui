@@ -12,6 +12,8 @@ echo "##sshkeys"; if [ -r /etc/dropbear/authorized_keys ]; then grep -c -E '^(ss
 echo "##cron"; crontab -l 2>/dev/null
 echo "##temp"; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null
 echo "##now"; date +%s
+echo "##wanip"; d=$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="dev"){print $(i+1);exit}}'); [ -n "$d" ] && ip -4 addr show dev "$d" 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2);print $2;exit}'
+echo "##updev"; [ -n "$d" ] && { echo "$d"; cat /sys/class/net/$d/statistics/rx_bytes /sys/class/net/$d/statistics/tx_bytes 2>/dev/null; }
 echo "##wg"; if command -v wg >/dev/null 2>&1; then echo wgok; wg show all latest-handshakes 2>/dev/null; fi
 echo "##lte"
 if command -v mmcli >/dev/null 2>&1; then mmcli -m any --signal-get 2>/dev/null; mmcli -m any 2>/dev/null | grep -i -E 'access tech|operator name'; fi
@@ -54,6 +56,20 @@ func ParseFacts(out string) Facts {
 				if !f.TempOK || c > f.TempC {
 					f.TempC, f.TempOK = c, true
 				}
+			}
+		case "updev":
+			t := strings.TrimSpace(l)
+			if t == "" {
+				break
+			}
+			if n, err := strconv.ParseInt(t, 10, 64); err == nil && f.UpDev != "" {
+				f.UpBytes += n
+			} else if f.UpDev == "" {
+				f.UpDev = t
+			}
+		case "wanip":
+			if t := strings.TrimSpace(l); t != "" {
+				f.WanIP = t
 			}
 		case "now":
 			if n, err := strconv.ParseInt(strings.TrimSpace(l), 10, 64); err == nil {

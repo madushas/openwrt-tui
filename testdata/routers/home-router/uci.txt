@@ -1,0 +1,40 @@
+package network
+config interface 'lan'
+	option device 'br-lan'
+	option proto 'static'
+	option ipaddr '192.168.1.1'
+	option netmask '255.255.255.0'
+config interface 'wan'
+	option device 'wan'
+	option proto 'dhcp'
+package firewall
+config zone
+	option name 'lan'
+	list network 'lan'
+	option input 'ACCEPT'
+	option output 'ACCEPT'
+	option forward 'ACCEPT'
+config zone
+	option name 'wan'
+	list network 'wan'
+	option input 'REJECT'
+	option output 'ACCEPT'
+	option forward 'REJECT'
+	option masq '1'
+config forwarding
+	option src 'lan'
+	option dest 'wan'
+config redirect
+	option name 'web'
+	option src 'wan'
+	option src_dport '8080'
+	option dest_ip '192.168.1.50'
+	option dest_port '80'
+	option target 'DNAT'
+package wireless
+config wifi-iface 'w'
+	option device 'radio0'
+	option mode 'ap'
+	option network 'lan'
+	option ssid 'Home'
+	option encryption 'psk2'

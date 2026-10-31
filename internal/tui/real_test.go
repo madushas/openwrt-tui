@@ -40,7 +40,7 @@ tmpfs                   124000      9000    115000   7% /tmp
 
 var counterRe = regexp.MustCompile(`(?m)^(\s*(?:wan|br-lan|phy0-ap0|eduvpn|eth0):)\s*(\d+)\s+(\d+)(\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+)\s+(\d+)\s+(\d+)`)
 
-// realRouter replays the anonymised capture from a real router, advancing the
+// realRouter replays the synthetic router fixture, advancing the
 // uptime, CPU jiffies and interface counters on every call so rates appear.
 func realRouter(t *testing.T) *transport.Fake {
 	b, err := os.ReadFile("../metrics/testdata/real-router.txt")
