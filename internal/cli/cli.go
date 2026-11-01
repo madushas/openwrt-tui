@@ -82,6 +82,7 @@ func init() {
 		{"profiles", "[add <name> <target> [-i key] [-p port] [-note text] | rm <name>]", "list, add or remove saved routers (use with -profile)", nil},
 		{"compare", "[-config a,b] [-all] [A] B", "show how two routers' configurations differ (A defaults to the current router; each is a profile, user@host, or demo)", nil},
 		{"probe", "", "show what the router is and what it can do", cmdProbe},
+		{"doctor", "", "check the router has what each feature needs, and what to install if not", cmdDoctor},
 		{"uci", "[-reveal] [config]", "show configuration (secrets masked unless -reveal)", cmdUCI},
 		{"services", "", "list init scripts with enabled and running state", cmdServices},
 		{"logs", "[-n 100] [-level warn] [-proc name] [-grep text] [-f]", "show the system log", cmdLogs},
@@ -276,6 +277,15 @@ func cmdProbe(e env, _ []string) error {
 	for _, a := range i.Advisories() {
 		fmt.Fprintf(e.out, "%s: %s\n", strings.ToUpper(a.Level), a.Text)
 	}
+	return nil
+}
+
+func cmdDoctor(e env, _ []string) error {
+	r, err := e.s.Doctor(e.ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(e.out, r.Text())
 	return nil
 }
 

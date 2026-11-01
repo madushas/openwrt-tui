@@ -16,6 +16,7 @@ import (
 	"github.com/madushakv/owrt-tui/internal/changes"
 	"github.com/madushakv/owrt-tui/internal/clients"
 	"github.com/madushakv/owrt-tui/internal/device"
+	"github.com/madushakv/owrt-tui/internal/doctor"
 	"github.com/madushakv/owrt-tui/internal/health"
 	"github.com/madushakv/owrt-tui/internal/metrics"
 	"github.com/madushakv/owrt-tui/internal/pkgmgr"
@@ -201,6 +202,15 @@ func (s *Session) HealthFacts(ctx context.Context) (health.Facts, error) {
 		f.Services = svcs
 	}
 	return f, nil
+}
+
+// Doctor checks what the router has for each feature. It only reads.
+func (s *Session) Doctor(ctx context.Context) (doctor.Report, error) {
+	res, err := transport.RunScript(ctx, s.T, doctor.Script())
+	if err != nil {
+		return doctor.Report{}, err
+	}
+	return doctor.Parse(res.Stdout), nil
 }
 
 // Traffic samples per-client byte counters from connection tracking. It only

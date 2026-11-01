@@ -35,7 +35,7 @@ func (d *diagScreen) Title() string   { return "Diagnostics" }
 func (d *diagScreen) Init() tea.Cmd   { return nil }
 func (d *diagScreen) Capturing() bool { return d.typing }
 func (d *diagScreen) Keys() string {
-	return "h edit host  p ping  t traceroute  n nslookup  c cancel"
+	return "h edit host  p ping  t traceroute  n nslookup  d check router  c cancel"
 }
 
 type diagDoneMsg struct {
@@ -131,6 +131,16 @@ func (d *diagScreen) key(m tea.KeyPressMsg) (screen, tea.Cmd) {
 				txt += fmt.Sprintf("\nrtt min/avg/max = %.1f/%.1f/%.1f ms", r.Min, r.Avg, r.Max)
 			}
 			return diagDoneMsg{title: "ping " + host, text: txt + "\n\n" + r.Raw}
+		})
+	case "d":
+		if d.busy != "" {
+			return d, toast("busy: press c to cancel")
+		}
+		d.busy = "doctor"
+		d.set("checking what this router has ...")
+		return d, d.e.call(func(ctx context.Context) tea.Msg {
+			r, err := d.e.S.Doctor(ctx)
+			return diagDoneMsg{title: "Router check: what each feature needs", text: r.Text(), err: err}
 		})
 	case "n":
 		if d.busy != "" {

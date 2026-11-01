@@ -213,3 +213,18 @@ func TestVersionFlag(t *testing.T) {
 		t.Fatalf("%d %q", code, o.String())
 	}
 }
+
+func TestDoctorReportsWhatIsMissingAndWhyItMatters(t *testing.T) {
+	code, out, _ := run(t, "doctor")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	for _, want := range []string{"MISSING   iwinfo", "[optional]", "ok        uci", "dnsmasq-full", "0 required"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "MISSING   opkg") {
+		t.Errorf("apk is present, so opkg must not be reported:\n%s", out)
+	}
+}

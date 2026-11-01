@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"context"
+
+	tea "charm.land/bubbletea/v2"
 	"strings"
 	"testing"
 
@@ -80,5 +83,19 @@ func TestDemoHealthShowsWeakSignalNote(t *testing.T) {
 	openTab(t, a, "Health")
 	if v := view(a); !strings.Contains(v, "cellular signal is weak") {
 		t.Fatalf("missing LTE note:\n%s", v)
+	}
+}
+
+func TestDiagnosticsCheckRouterKey(t *testing.T) {
+	a := writeApp(t)
+	openTab(t, a, "Diagnostics")
+	press(t, a, "d")
+	d := scr(a, "Diagnostics").(*diagScreen)
+	a.Update(d.e.call(func(ctx context.Context) tea.Msg {
+		r, err := d.e.S.Doctor(ctx)
+		return diagDoneMsg{title: "Router check: what each feature needs", text: r.Text(), err: err}
+	})())
+	if v := view(a); !strings.Contains(v, "MISSING") || !strings.Contains(v, "Router check") {
+		t.Fatalf("check not shown:\n%s", v)
 	}
 }
