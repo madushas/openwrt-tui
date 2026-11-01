@@ -65,13 +65,13 @@ func TestAcceptedStoreIsPrivateAndSurvivesRoundTrip(t *testing.T) {
 		t.Skip("Unix permission bits are not portable to Windows")
 	}
 	dir := t.TempDir()
-	if err := SaveAccepted(dir, "root@192.168.10.1", Accepted{"a": "1"}); err != nil {
+	if err := SaveAccepted(dir, "root@192.168.50.1", Accepted{"a": "1"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := LoadAccepted(dir, "root@192.168.10.1"); got["a"] != "1" {
+	if got := LoadAccepted(dir, "root@192.168.50.1"); got["a"] != "1" {
 		t.Fatalf("%v", got)
 	}
-	p, _ := acceptPath(dir, "root@192.168.10.1")
+	p, _ := acceptPath(dir, "root@192.168.50.1")
 	if st, err := os.Stat(p); err != nil || st.Mode().Perm() != 0o600 {
 		t.Fatalf("file mode %v %v", st, err)
 	}

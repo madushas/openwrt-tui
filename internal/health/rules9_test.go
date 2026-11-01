@@ -4,21 +4,21 @@ import "testing"
 
 const wgNet = `package network
 
-config interface 'eduvpn'
+config interface 'vpn'
 	option proto 'wireguard'
 
-config wireguard_eduvpn
+config wireguard_vpn
 	option description 'edu server'
 	option public_key 'PUBKEY1'
 	option endpoint_host 'vpn.example.org'
 
-config wireguard_eduvpn
+config wireguard_vpn
 	option description 'dial-in phone'
 	option public_key 'PUBKEY2'
 `
 
 func TestParseFactsPhase9(t *testing.T) {
-	out := "##overlay\n##temp\n61000\n73500\n##now\n1790001000\n##wg\nwgok\neduvpn\tPUBKEY1\t1790000900\n##lte\n{\"type\":\"lte\",\"rssi\":-70,\"rsrq\":-9,\"rsrp\":-118,\"snr\":1.5}\n"
+	out := "##overlay\n##temp\n61000\n73500\n##now\n1790001000\n##wg\nwgok\nvpn\tPUBKEY1\t1790000900\n##lte\n{\"type\":\"lte\",\"rssi\":-70,\"rsrq\":-9,\"rsrp\":-118,\"snr\":1.5}\n"
 	f := ParseFacts(out)
 	if !f.TempOK || f.TempC != 73.5 {
 		t.Fatalf("temp %v", f.TempC)
@@ -62,17 +62,17 @@ func TestWGStale(t *testing.T) {
 	run := func(at int64, present bool) string {
 		f := base
 		if present {
-			f.Handshakes = []Handshake{{Iface: "eduvpn", Peer: "PUBKEY1", At: at}, {Iface: "eduvpn", Peer: "PUBKEY2", At: 0}}
+			f.Handshakes = []Handshake{{Iface: "vpn", Peer: "PUBKEY1", At: at}, {Iface: "vpn", Peer: "PUBKEY2", At: 0}}
 		}
 		return ids(Check(Input{Configs: cfgs, Facts: f}))
 	}
 	if got := run(9900, true); got != "" {
 		t.Errorf("fresh: %q", got)
 	}
-	if got := run(1000, true); got != "wg-stale-eduvpn" {
+	if got := run(1000, true); got != "wg-stale-vpn" {
 		t.Errorf("stale: %q", got)
 	}
-	if got := run(0, true); got != "wg-never-eduvpn" {
+	if got := run(0, true); got != "wg-never-vpn" {
 		t.Errorf("never (dial-in peer must be ignored): %q", got)
 	}
 	if got := run(0, false); got != "" {

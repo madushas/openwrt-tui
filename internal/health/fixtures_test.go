@@ -46,7 +46,7 @@ func TestBehindRouterFindings(t *testing.T) {
 	if role != RoleBehind {
 		t.Fatalf("role %q", role)
 	}
-	for _, id := range []string{"dup-list:firewall.@zone[1].network", "multi-zone:direct", "multi-zone:eduvpn", "pbr-dup:@policy[3]", "fwd-dangling:@forwarding[1]:src"} {
+	for _, id := range []string{"dup-list:firewall.@zone[1].network", "multi-zone:direct", "multi-zone:vpn", "pbr-dup:@policy[3]", "fwd-dangling:@forwarding[1]:src"} {
 		if find(fs, id) == nil {
 			t.Errorf("missing %s in %s", id, ids(fs))
 		}
@@ -136,5 +136,54 @@ func TestLeftoverModemDoesNotMakeItCellular(t *testing.T) {
 	}
 	if r := Detect(cfgs, Facts{UpDev: "wwan0"}); r != RoleCellular {
 		t.Errorf("default route on a modem must win: %q", r)
+	}
+}
+
+func TestDNSBypassAndVPNLeakRules(t *testing.T) {
+	// the synthetic fixture already forces port 53 to the router: nothing to report
+	fs := Check(Input{Configs: fixture(t, "firewall-behind"), Facts: Facts{SSHKeys: -1, UpDev: "wan", WanIP: "192.168.1.2"}})
+	if find(fs, "dns-bypass") != nil || find(fs, "dns-vpn-leak") != nil {
+		t.Errorf("false DNS finding on the synthetic fixture: %s", ids(fs))
+	}
+	const base = `package dhcp
+config dnsmasq
+	list server '9.9.9.9'
+package firewall
+config zone
+	option name 'lan'
+	list network 'lan'
+`
+	if find(Check(Input{Configs: parse(t, base)}), "dns-bypass") == nil {
+		t.Error("custom upstream DNS without a port 53 redirect must be noted")
+	}
+	forced := base + "config redirect\n\toption src 'lan'\n\toption target 'DNAT'\n\toption src_dport '53'\n"
+	if find(Check(Input{Configs: parse(t, forced)}), "dns-bypass") != nil {
+		t.Error("forced DNS still reported")
+	}
+	if find(Check(Input{Configs: parse(t, "package dhcp\nconfig dnsmasq\n\toption noresolv '0'\npackage firewall\nconfig zone\n\toption name 'lan'\n")}), "dns-bypass") != nil {
+		t.Error("nothing is filtered, so nothing can be bypassed")
+	}
+	vpn := `package network
+config interface 'wan'
+	option proto 'dhcp'
+config interface 'vpn'
+	option proto 'wireguard'
+config wireguard_vpn
+	list allowed_ips '0.0.0.0/0'
+	option route_allowed_ips '1'
+`
+	if f := find(Check(Input{Configs: parse(t, vpn)}), "dns-vpn-leak"); f == nil || f.Sev != Warn {
+		t.Errorf("full-tunnel VPN with ISP DNS must warn: %+v", f)
+	}
+	fixed := vpn + "package dhcp\nconfig dnsmasq\n\toption noresolv '1'\n\tlist server '10.2.0.1'\n"
+	if find(Check(Input{Configs: parse(t, fixed)}), "dns-vpn-leak") != nil {
+		t.Error("fixed upstream DNS still flagged")
+	}
+}
+
+func TestDNSRedirectToAnotherHostDoesNotCount(t *testing.T) {
+	cfg := parse(t, "package dhcp\nconfig dnsmasq\n\tlist server '9.9.9.9'\npackage firewall\nconfig zone\n\toption name 'lan'\nconfig redirect\n\toption src 'lan'\n\toption target 'DNAT'\n\toption src_dport '53'\n\toption dest_ip '192.168.1.9'\n")
+	if find(Check(Input{Configs: cfg}), "dns-bypass") == nil {
+		t.Error("a port 53 redirect to another host is not the router's own DNS")
 	}
 }

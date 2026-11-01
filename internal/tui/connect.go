@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/madushakv/owrt-tui/internal/discover"
+	"github.com/madushakv/owrt-tui/internal/profiles"
 	"github.com/madushakv/owrt-tui/internal/session"
 	"github.com/madushakv/owrt-tui/internal/sshcheck"
 	"github.com/madushakv/owrt-tui/internal/transport"
@@ -34,6 +35,7 @@ type Sys struct {
 	KeygenCmd  func(path string) *exec.Cmd
 	InstallCmd func(target string, extra []string, pub string) (*exec.Cmd, error)
 	SaveHost   func(h discover.HostEntry) error
+	Profiles   func() []profiles.Profile // saved routers (nil = none)
 }
 
 func defaultSys() *Sys {
@@ -54,6 +56,14 @@ func defaultSys() *Sys {
 		KeygenCmd:  sshcheck.KeygenCmd,
 		InstallCmd: sshcheck.InstallCmd,
 		SaveHost:   func(h discover.HostEntry) error { return discover.AppendHost(filepath.Join(sshDir, "config"), h) },
+		Profiles: func() []profiles.Profile {
+			st, err := profiles.Open()
+			if err != nil {
+				return nil
+			}
+			ps, _ := st.List()
+			return ps
+		},
 	}
 }
 
@@ -81,7 +91,7 @@ const (
 	stSave
 )
 
-type cand struct{ label, target, note, origin string }
+type cand struct{ label, target, note, origin, identity, port string }
 
 type connect struct {
 	ctx  context.Context
@@ -188,8 +198,23 @@ func (c *connect) Init() tea.Cmd {
 	}
 	return func() tea.Msg {
 		var cs []cand
+		if c.sys.Profiles != nil {
+			for _, p := range c.sys.Profiles() {
+				note := p.Target
+				if p.Note != "" {
+					note += "  " + p.Note
+				}
+				cs = append(cs, cand{label: p.Name, target: p.Target, note: "saved router: " + note, origin: "profile", identity: p.Identity, port: p.Port})
+			}
+		}
 		for _, r := range c.sys.Recent() {
-			cs = append(cs, cand{label: r, target: r, note: "last used", origin: "recent"})
+			dup := false
+			for _, x := range cs {
+				dup = dup || x.target == r
+			}
+			if !dup { // a saved router with the same target already covers it
+				cs = append(cs, cand{label: r, target: r, note: "last used", origin: "recent"})
+			}
 		}
 		var gwErr error
 		if gw, err := c.sys.Gateway(); err == nil {
@@ -429,6 +454,9 @@ func (c *connect) key(m tea.KeyPressMsg) tea.Cmd {
 				return c.startManual("")
 			}
 			c.origin = cd.origin
+			if cd.origin == "profile" {
+				c.identity, c.opts.Port = cd.identity, cd.port
+			}
 			return c.try(cd.target)
 		}
 	case stManual:

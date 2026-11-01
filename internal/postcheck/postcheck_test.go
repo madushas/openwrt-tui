@@ -8,11 +8,11 @@ import (
 )
 
 func TestParseAndHealthy(t *testing.T) {
-	r := Parse("##owrt-postcheck\ndefault_route=ok\ngateway=fail\ndns=ok\nwg_eduvpn=42\nwg_old=never\nproc_dnsmasq=ok\njunk line\nbad=a b\n")
+	r := Parse("##owrt-postcheck\ndefault_route=ok\ngateway=fail\ndns=ok\nwg_vpn=42\nwg_old=never\nproc_dnsmasq=ok\njunk line\nbad=a b\n")
 	if len(r) != 6 {
 		t.Fatalf("%v", r)
 	}
-	if !Healthy("wg_eduvpn", "42") || Healthy("wg_eduvpn", "900") || Healthy("wg_old", "never") || Healthy("gateway", "fail") {
+	if !Healthy("wg_vpn", "42") || Healthy("wg_vpn", "900") || Healthy("wg_old", "never") || Healthy("gateway", "fail") {
 		t.Fatal("Healthy wrong")
 	}
 	if r.Passing() != 4 {
@@ -21,13 +21,13 @@ func TestParseAndHealthy(t *testing.T) {
 }
 
 func TestRegressions(t *testing.T) {
-	before := Result{"default_route": "ok", "gateway": "ok", "dns": "ok", "wg_eduvpn": "30", "proc_dropbear": "ok", "proc_uhttpd": "fail"}
-	same := Result{"default_route": "ok", "gateway": "ok", "dns": "ok", "wg_eduvpn": "100", "proc_dropbear": "ok", "proc_uhttpd": "fail"}
+	before := Result{"default_route": "ok", "gateway": "ok", "dns": "ok", "wg_vpn": "30", "proc_dropbear": "ok", "proc_uhttpd": "fail"}
+	same := Result{"default_route": "ok", "gateway": "ok", "dns": "ok", "wg_vpn": "100", "proc_dropbear": "ok", "proc_uhttpd": "fail"}
 	if got := Regressions(before, same); len(got) != 0 {
 		t.Fatalf("a check that already failed was blamed on the change: %v", got)
 	}
-	worse := Result{"default_route": "ok", "gateway": "fail", "wg_eduvpn": "never", "proc_dropbear": "ok"}
-	want := []string{"DNS answers: no answer", "WireGuard eduvpn: no handshake", "gateway reachable: failed"}
+	worse := Result{"default_route": "ok", "gateway": "fail", "wg_vpn": "never", "proc_dropbear": "ok"}
+	want := []string{"DNS answers: no answer", "WireGuard vpn: no handshake", "gateway reachable: failed"}
 	if got := Regressions(before, worse); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}

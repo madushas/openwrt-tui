@@ -167,7 +167,7 @@ func TestPeerWizardExplainsMissingServer(t *testing.T) {
 	a := writeApp(t)
 	ts := startTask(t, a, "wgpeer")
 	ts.form, ts.info = nil, nil
-	cfgs, _ := uci.ParseExport("package network\nconfig interface 'eduvpn'\n\toption proto 'wireguard'\n\toption private_key 'x'\n")
+	cfgs, _ := uci.ParseExport("package network\nconfig interface 'vpn'\n\toption proto 'wireguard'\n\toption private_key 'x'\n")
 	ts.cfgs = cfgs
 	ts.note = nil
 	ts.Update(tasksCfgMsg{key: "wgpeer", cfgs: cfgs})

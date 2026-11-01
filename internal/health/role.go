@@ -99,8 +99,8 @@ func Detect(cfgs []uci.Config, f Facts) Role {
 
 // hidden lists finding-ID prefixes that make no sense for a role.
 var hidden = map[Role][]string{
-	RoleAP:       {"wan-forward", "wan-rule", "open-zone", "multi-zone", "fwd-dangling", "pbr-dup"},
-	RoleRepeater: {"wan-forward", "wan-rule", "open-zone", "multi-zone", "fwd-dangling", "pbr-dup"},
+	RoleAP:       {"wan-forward", "wan-rule", "open-zone", "multi-zone", "fwd-dangling", "pbr-dup", "dns-"},
+	RoleRepeater: {"wan-forward", "wan-rule", "open-zone", "multi-zone", "fwd-dangling", "pbr-dup", "dns-"},
 }
 
 // softened lists prefixes that are capped to a note for a role, with why.

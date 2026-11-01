@@ -38,7 +38,7 @@ tmpfs                   124000      9000    115000   7% /tmp
 55182.62 213816.70
 `
 
-var counterRe = regexp.MustCompile(`(?m)^(\s*(?:wan|br-lan|phy0-ap0|eduvpn|eth0):)\s*(\d+)\s+(\d+)(\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+)\s+(\d+)\s+(\d+)`)
+var counterRe = regexp.MustCompile(`(?m)^(\s*(?:wan|br-lan|phy0-ap0|vpn|eth0):)\s*(\d+)\s+(\d+)(\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+)\s+(\d+)\s+(\d+)`)
 
 // realRouter replays the synthetic router fixture, advancing the
 // uptime, CPU jiffies and interface counters on every call so rates appear.
@@ -98,7 +98,7 @@ func TestDashboardWithRealRouterData(t *testing.T) {
 	}
 	a.Update(tea.WindowSizeMsg{Width: 130, Height: 38})
 	v := plain(a.render())
-	for _, want := range []string{"192.168.1.2/24", "192.168.10.1/24", "wireguard", "HomeNet", "phone-a", "tv-b", "-43 dBm", "Traffic", "wan"} {
+	for _, want := range []string{"192.168.1.2/24", "192.168.50.1/24", "wireguard", "HomeNet", "phone-a", "tv-b", "-43 dBm", "Traffic", "wan"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("dashboard missing %q", want)
 		}

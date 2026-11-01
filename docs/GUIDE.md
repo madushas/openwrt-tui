@@ -102,3 +102,24 @@ carrier-grade NAT (100.64.0.0/10, so nothing can connect in), a note about WireG
 on SIM links, and port-forward findings explain that carriers usually block inbound
 connections. The role is chosen from the default route's device; a USB-tethered phone (usb0)
 is treated as cellular too. If the guess is wrong, press r on Health to pin a role.
+
+## Events: repeats and reconnecting devices
+
+The Events screen merges identical logins, DHCP leases and cron runs into one line with a
+count, e.g. "SSH login for root from 192.168.50.199 (x14)". Wi-Fi joins and leaves are merged
+only when they directly repeat, so a reconnect pattern stays visible. A device that joins
+five or more times in the log is called out above the list (usually weak signal, power
+saving on the device, or interference).
+
+## Saved routers in the Connect screen
+
+Routers saved with `owrt-tui profiles` are listed first in the picker with their note; Enter
+connects with the saved user, host, port and key.
+
+## DNS checks (Health)
+
+- "devices can bypass the router's DNS": the router filters or chooses DNS (ad blocking or custom
+  upstream servers) but no firewall redirect sends clients' port-53 traffic to it.
+  DNS over HTTPS/TLS is not covered by that redirect.
+- "DNS may be answered outside the VPN": a full-tunnel WireGuard VPN is configured but the
+  router has no fixed upstream DNS with "ignore resolv file".

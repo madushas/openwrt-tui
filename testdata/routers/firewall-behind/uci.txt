@@ -92,39 +92,39 @@ config dhcp 'direct'
 	option dns '8.8.8.8'
 
 config host
-	option ip '192.168.10.212'
+	option ip '192.168.50.212'
 	list mac '02:00:00:00:00:01'
 
 config domain
 	option name 'host1'
-	option ip '192.168.30.199'
+	option ip '192.168.60.199'
 
 config domain
 	option name 'host2'
-	option ip '192.168.10.212'
+	option ip '192.168.50.212'
 
 config host
 	option name 'host3'
-	option ip '192.168.10.235'
+	option ip '192.168.50.235'
 	list mac '02:00:00:00:00:02'
 
 config domain
 	option name 'host4'
-	option ip '192.168.10.235'
+	option ip '192.168.50.235'
 
 config host
 	option name 'host5'
-	option ip '192.168.10.178'
+	option ip '192.168.50.178'
 	list mac '02:00:00:00:00:03'
 
 config host
 	option name 'host6'
-	option ip '192.168.10.199'
+	option ip '192.168.50.199'
 	list mac '02:00:00:00:00:04'
 
 config domain
 	option name 'router'
-	option ip '192.168.10.1'
+	option ip '192.168.50.1'
 
 package dropbear
 
@@ -163,7 +163,7 @@ config zone
 	list network 'wan6'
 	list network 'wwan'
 	list network 'wan'
-	list network 'eduvpn'
+	list network 'vpn'
 	list network 'wwan'
 	list network 'wwan'
 	list network 'wwan'
@@ -761,8 +761,8 @@ config zone
 	option forward 'REJECT'
 	option masq '1'
 	option mtu_fix '1'
-	list network 'eduvpn'
-	list network 'ovpn_eduvpn'
+	list network 'vpn'
+	list network 'ovpn_vpn'
 
 config forwarding
 	option src 'lan'
@@ -1096,7 +1096,7 @@ config device
 config interface 'lan'
 	option device 'br-lan'
 	option proto 'static'
-	option ipaddr '192.168.10.1'
+	option ipaddr '192.168.50.1'
 	option netmask '255.255.255.0'
 	option ip6assign '60'
 	option ipv6 '0'
@@ -1107,7 +1107,7 @@ config interface 'wwan'
 	option proto 'ncm'
 	option pdptype 'ipv4'
 
-config interface 'eduvpn'
+config interface 'vpn'
 	option proto 'wireguard'
 	option private_key '********'
 	option mtu '1420'
@@ -1119,7 +1119,7 @@ config interface 'eduvpn'
 	list dns '2620:fe::fe'
 	option multipath 'off'
 
-config interface 'ovpn_eduvpn'
+config interface 'ovpn_vpn'
 	option proto 'none'
 	option device 'tun0'
 
@@ -1130,7 +1130,7 @@ config interface 'wan'
 
 config interface 'direct'
 	option proto 'static'
-	option ipaddr '192.168.30.1'
+	option ipaddr '192.168.60.1'
 	option netmask '255.255.255.0'
 	option device 'br-direct'
 
@@ -1141,7 +1141,7 @@ config device 'br_direct'
 config interface 'wan6'
 	option proto 'none'
 
-config wireguard_eduvpn
+config wireguard_vpn
 	option description 'Imported peer configuration'
 	option public_key 'ANONYMISED'
 	option preshared_key 'ANONYMISED'
@@ -1153,8 +1153,8 @@ config wireguard_eduvpn
 
 package openvpn
 
-config openvpn 'eduvpn'
-	option config '/etc/openvpn/eduvpn.ovpn'
+config openvpn 'vpn'
+	option config '/etc/openvpn/vpn.ovpn'
 	option enabled '1'
 
 package openvpn_recipes
@@ -1246,13 +1246,13 @@ config openvpn_recipe 'client_tap_bridge'
 package pbr
 
 config policy
-	option name 'allow_slt_admin'
+	option name 'allow_upstream_admin'
 	option dest_addr '192.168.1.1'
 	option interface 'wan'
 
 config policy
 	option name 'emergency_bypass'
-	option src_addr '192.168.30.0/24'
+	option src_addr '192.168.60.0/24'
 	option interface 'wan'
 
 config policy
@@ -1311,14 +1311,14 @@ config dns_policy
 	option enabled '0'
 
 config policy
-	option name 'slt_direct'
+	option name 'upstream_direct'
 	option dest_addr '192.168.1.1'
 	option interface 'wan'
 
 config policy
 	option name 'lan_to_vpn'
-	option src_addr '192.168.10.0/24'
-	option interface 'eduvpn'
+	option src_addr '192.168.50.0/24'
+	option interface 'vpn'
 
 package rpcd
 
@@ -1394,28 +1394,28 @@ config led
 	option name 'VPN-Handshake'
 	option sysfs 'blue:signal3'
 	option trigger 'netdev'
-	option dev 'eduvpn'
+	option dev 'vpn'
 	list mode 'link'
 
 config led
 	option name 'VPN-TX'
 	option sysfs 'blue:signal4'
 	option trigger 'netdev'
-	option dev 'eduvpn'
+	option dev 'vpn'
 	list mode 'tx'
 
 config led
 	option name 'VPN-RX'
 	option sysfs 'blue:signal5'
 	option trigger 'netdev'
-	option dev 'eduvpn'
+	option dev 'vpn'
 	list mode 'rx'
 
 config led
 	option name 'Security-OK'
 	option sysfs 'blue:modem'
 	option trigger 'netdev'
-	option dev 'eduvpn'
+	option dev 'vpn'
 	list mode 'link'
 
 config led

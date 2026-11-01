@@ -14,12 +14,12 @@ const base = `package network
 config interface 'lan'
 	option device 'br-lan'
 	option proto 'static'
-	option ipaddr '192.168.10.1'
+	option ipaddr '192.168.50.1'
 	option netmask '255.255.255.0'
 
 config interface 'direct'
 	option proto 'static'
-	option ipaddr '192.168.30.1'
+	option ipaddr '192.168.60.1'
 	option netmask '255.255.255.0'
 
 package dhcp
@@ -31,7 +31,7 @@ config dhcp 'lan'
 
 config host
 	option name 'tv'
-	option ip '192.168.10.212'
+	option ip '192.168.50.212'
 	list mac '64:82:14:47:41:0F'
 
 package dropbear
@@ -99,18 +99,18 @@ func set(cfg, sec, opt, val string) changes.Change {
 }
 
 func TestNothingChangedNothingReported(t *testing.T) {
-	if fs := check(t, "192.168.10.1"); len(fs) != 0 {
+	if fs := check(t, "192.168.50.1"); len(fs) != 0 {
 		t.Fatalf("%+v", fs)
 	}
 }
 
 func TestChangingTheManagementAddressIsALockout(t *testing.T) {
-	fs := check(t, "192.168.10.1", set("network", "lan", "ipaddr", "192.168.20.1"))
+	fs := check(t, "192.168.50.1", set("network", "lan", "ipaddr", "192.168.20.1"))
 	if !has(fs, "lockout-iface") || !NeedsRollback(fs) {
 		t.Fatalf("%+v", fs)
 	}
 	// the same edit on the other interface is not a lock-out
-	if fs := check(t, "192.168.10.1", set("network", "direct", "ipaddr", "192.168.31.1")); NeedsRollback(fs) {
+	if fs := check(t, "192.168.50.1", set("network", "direct", "ipaddr", "192.168.31.1")); NeedsRollback(fs) {
 		t.Fatalf("unrelated interface flagged: %+v", fs)
 	}
 	// a host name means "probably lan"
@@ -120,20 +120,20 @@ func TestChangingTheManagementAddressIsALockout(t *testing.T) {
 }
 
 func TestSSHAndFirewallLockouts(t *testing.T) {
-	if fs := check(t, "192.168.10.1", set("dropbear", "main", "Port", "2222")); !has(fs, "lockout-ssh") {
+	if fs := check(t, "192.168.50.1", set("dropbear", "main", "Port", "2222")); !has(fs, "lockout-ssh") {
 		t.Fatalf("%+v", fs)
 	}
-	if fs := check(t, "192.168.10.1", set("firewall", "@zone[0]", "input", "REJECT")); !has(fs, "lockout-zone") {
+	if fs := check(t, "192.168.50.1", set("firewall", "@zone[0]", "input", "REJECT")); !has(fs, "lockout-zone") {
 		t.Fatalf("%+v", fs)
 	}
 	del := changes.Change{Op: changes.OpDelete, Config: "network", Section: "lan"}
-	if fs := check(t, "192.168.10.1", del); !has(fs, "lockout-iface") {
+	if fs := check(t, "192.168.50.1", del); !has(fs, "lockout-iface") {
 		t.Fatalf("%+v", fs)
 	}
 }
 
 func TestOverlapPoolAndLeaseChecks(t *testing.T) {
-	if fs := check(t, "x", set("network", "direct", "ipaddr", "192.168.10.77")); !has(fs, "subnet-overlap") {
+	if fs := check(t, "x", set("network", "direct", "ipaddr", "192.168.50.77")); !has(fs, "subnet-overlap") {
 		t.Fatalf("%+v", fs)
 	}
 	if fs := check(t, "x", set("dhcp", "lan", "limit", "300")); !has(fs, "dhcp-pool") {
@@ -144,7 +144,7 @@ func TestOverlapPoolAndLeaseChecks(t *testing.T) {
 	}
 	var s changes.Set
 	s.Add(changes.Change{Op: changes.OpAddSect, Config: "dhcp", Section: "dup", Type: "host"})
-	s.Add(set("dhcp", "dup", "ip", "192.168.10.212"))
+	s.Add(set("dhcp", "dup", "ip", "192.168.50.212"))
 	s.Add(set("dhcp", "dup", "mac", "64:82:14:47:41:0f"))
 	b := parse(t)
 	fs := Check(b, model.Overlay(b, &s), Context{})
@@ -181,7 +181,7 @@ func TestExistingProblemsAreNotBlamedOnTheChange(t *testing.T) {
 }
 
 func TestMessagesStayShortAndPlain(t *testing.T) {
-	for _, f := range check(t, "192.168.10.1", set("network", "lan", "ipaddr", "192.168.20.1")) {
+	for _, f := range check(t, "192.168.50.1", set("network", "lan", "ipaddr", "192.168.20.1")) {
 		if strings.Contains(f.Msg, "\n") || len(f.Msg) > 200 {
 			t.Fatalf("bad message %q", f.Msg)
 		}

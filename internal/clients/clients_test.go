@@ -66,11 +66,11 @@ package pbr
 
 config policy
 	option src_addr '192.168.1.50'
-	option interface 'eduvpn'
+	option interface 'vpn'
 `)
 	l := Merge(raw, conf)
 	p := byMAC(l, "aa:bb:cc:00:00:01")
-	if !p.Online || p.WifiIface != "phy0-ap0" || p.Signal != -52 || p.RxBytes != 123456 || p.Connected != 3600 || p.Route != "eduvpn" || p.Name != "phone" {
+	if !p.Online || p.WifiIface != "phy0-ap0" || p.Signal != -52 || p.RxBytes != 123456 || p.Connected != 3600 || p.Route != "vpn" || p.Name != "phone" {
 		t.Fatalf("%+v", p)
 	}
 	u := byMAC(l, "aa:bb:cc:00:00:02")
@@ -122,7 +122,7 @@ func TestActions(t *testing.T) {
 	if u := SetBlocked(c, false); len(u) != 1 || u[0].Section != c.BlockSec {
 		t.Fatalf("%+v", u)
 	}
-	r, err := SetRoute(c, "eduvpn")
+	r, err := SetRoute(c, "vpn")
 	if err != nil || len(r) != 5 || r[2].Value != "192.168.1.9" {
 		t.Fatalf("%v %+v", err, r)
 	}
@@ -137,9 +137,9 @@ func TestActions(t *testing.T) {
 }
 
 func TestRouteChoices(t *testing.T) {
-	c := cfgs(t, "package network\n\nconfig interface 'lan'\n\toption proto 'static'\n\nconfig interface 'wan'\n\toption proto 'dhcp'\n\nconfig interface 'eduvpn'\n\toption proto 'wireguard'\n")
+	c := cfgs(t, "package network\n\nconfig interface 'lan'\n\toption proto 'static'\n\nconfig interface 'wan'\n\toption proto 'dhcp'\n\nconfig interface 'vpn'\n\toption proto 'wireguard'\n")
 	got := strings.Join(RouteChoices(c), ",")
-	if got != "eduvpn,wan" {
+	if got != "vpn,wan" {
 		t.Fatal(got)
 	}
 }

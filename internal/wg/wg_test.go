@@ -179,8 +179,8 @@ func TestServerRefusals(t *testing.T) {
 		t.Fatal("port already open accepted")
 	}
 	// a client connection is not a server
-	cl := withNet("\nconfig interface 'eduvpn'\n\toption proto 'wireguard'\n\toption private_key 'x'\n\tlist addresses '10.2.0.2/32'\n")
-	if _, _, _, err := AddPeer(Peer{Iface: "eduvpn", Name: "p", Endpoint: "a.b:1"}, cfgs(t, cl)); err == nil {
+	cl := withNet("\nconfig interface 'vpn'\n\toption proto 'wireguard'\n\toption private_key 'x'\n\tlist addresses '10.2.0.2/32'\n")
+	if _, _, _, err := AddPeer(Peer{Iface: "vpn", Name: "p", Endpoint: "a.b:1"}, cfgs(t, cl)); err == nil {
 		t.Fatal("peer added to a client interface")
 	}
 	for _, ep := range []string{"nohost", "host:0", ":51820", "bad host:51820", "a;b:1"} {
@@ -191,7 +191,7 @@ func TestServerRefusals(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	c := cfgs(t, withNet("\nconfig interface 'eduvpn'\n\toption proto 'wireguard'\n\toption private_key 'x'\n\tlist addresses '10.2.0.2/32'\n"))
+	c := cfgs(t, withNet("\nconfig interface 'vpn'\n\toption proto 'wireguard'\n\toption private_key 'x'\n\tlist addresses '10.2.0.2/32'\n"))
 	_, peerPub, _ := GenKey()
 	ch, pub, warn, err := NewClient(Client{Name: "provider", Address: "10.5.0.2/32", PeerPub: peerPub, Endpoint: "vpn.example.net:51820", FullTun: true}, c)
 	if err != nil {
@@ -201,7 +201,7 @@ func TestClient(t *testing.T) {
 	if CheckKey(pub) != nil {
 		t.Fatal("no public key returned for the provider")
 	}
-	if len(warn) != 1 || !strings.Contains(warn[0], "eduvpn") {
+	if len(warn) != 1 || !strings.Contains(warn[0], "vpn") {
 		t.Fatalf("no warning about the competing default route: %v", warn)
 	}
 	var masq, port string
@@ -219,7 +219,7 @@ func TestClient(t *testing.T) {
 	for name, cl := range map[string]Client{
 		"peer key": {Name: "p1", Address: "10.5.0.2/32", PeerPub: "nope", Endpoint: "a.b:1"},
 		"address":  {Name: "p1", Address: "10.5.0.2", PeerPub: peerPub, Endpoint: "a.b:1"},
-		"exists":   {Name: "eduvpn", Address: "10.5.0.2/32", PeerPub: peerPub, Endpoint: "a.b:1"},
+		"exists":   {Name: "vpn", Address: "10.5.0.2/32", PeerPub: peerPub, Endpoint: "a.b:1"},
 		"priv":     {Name: "p1", Address: "10.5.0.2/32", PeerPub: peerPub, Endpoint: "a.b:1", PrivateKey: "bad"},
 	} {
 		if _, _, _, err := NewClient(cl, c); err == nil {

@@ -97,8 +97,8 @@ func TestPresetsAndHelpers(t *testing.T) {
 }
 
 func TestTemplates(t *testing.T) {
-	s, c, tag, err := WGWatchdog("eduvpn", 5)
-	if err != nil || s != "*/5 * * * *" || tag != "wg-watchdog-eduvpn" || !strings.Contains(c, `date +\%s`) {
+	s, c, tag, err := WGWatchdog("vpn", 5)
+	if err != nil || s != "*/5 * * * *" || tag != "wg-watchdog-vpn" || !strings.Contains(c, `date +\%s`) {
 		t.Fatalf("%q %q %q %v", s, c, tag, err)
 	}
 	if _, err := Add("", s, c, tag); err != nil {

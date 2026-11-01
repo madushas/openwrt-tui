@@ -106,7 +106,7 @@ func TestSIMRouteRejectsBadInput(t *testing.T) {
 func TestSIMModes(t *testing.T) {
 	base := SIM{Name: "sim", Proto: "qmi", Device: "/dev/cdc-wdm0", APN: "internet"}
 	src := base
-	src.Mode, src.Domains = ViaSources, "192.168.10.50, AA:BB:CC:DD:EE:FF"
+	src.Mode, src.Domains = ViaSources, "192.168.50.50, AA:BB:CC:DD:EE:FF"
 	ch, warn, err := SIMRoute(src, simCfgs(t))
 	if err != nil {
 		t.Fatal(err)

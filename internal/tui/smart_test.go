@@ -12,7 +12,7 @@ import (
 	"github.com/madushakv/owrt-tui/internal/transport"
 )
 
-var healthy = postcheck.Result{"default_route": "ok", "gateway": "ok", "dns": "ok", "wg_eduvpn": "30"}
+var healthy = postcheck.Result{"default_route": "ok", "gateway": "ok", "dns": "ok", "wg_vpn": "30"}
 
 // pending puts the Changes screen into "applied, waiting" with a baseline.
 func pending(t *testing.T, base postcheck.Result) (*App, *changesScreen) {
@@ -61,14 +61,14 @@ func TestSmartConfirmKeepsTheChangeAfterTwoCleanChecks(t *testing.T) {
 
 func TestSmartConfirmNeverKeepsABrokenChange(t *testing.T) {
 	a, c := pending(t, healthy)
-	broken := postcheck.Result{"default_route": "ok", "gateway": "fail", "dns": "ok", "wg_eduvpn": "never"}
+	broken := postcheck.Result{"default_route": "ok", "gateway": "fail", "dns": "ok", "wg_vpn": "never"}
 	for i := 0; i < 5; i++ {
 		c.Update(smartResultMsg{id: c.planID, res: broken})
 	}
 	if confirmCalls(a) != 0 || c.phase != phasePending {
 		t.Fatal("a failing change was confirmed")
 	}
-	if !strings.Contains(c.note, "gateway reachable") || !strings.Contains(c.note, "WireGuard eduvpn") {
+	if !strings.Contains(c.note, "gateway reachable") || !strings.Contains(c.note, "WireGuard vpn") {
 		t.Fatalf("failure not explained: %q", c.note)
 	}
 	// a flapping router: one clean check between failures is not enough

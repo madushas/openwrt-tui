@@ -15,6 +15,7 @@ import (
 
 	"github.com/madushakv/owrt-tui/internal/demo"
 	"github.com/madushakv/owrt-tui/internal/discover"
+	"github.com/madushakv/owrt-tui/internal/profiles"
 	"github.com/madushakv/owrt-tui/internal/sshcheck"
 	"github.com/madushakv/owrt-tui/internal/transport"
 )
@@ -448,5 +449,30 @@ func TestConnectScreenFitsSmallTerminals(t *testing.T) {
 		if n := len(strings.Split(h.view(), "\n")); n != sz[1] {
 			t.Errorf("%dx%d: %d lines", sz[0], sz[1], n)
 		}
+	}
+}
+
+func TestSavedRoutersAreListedFirstAndUseTheirKeyAndPort(t *testing.T) {
+	h := newHarness(t, ConnectOpts{})
+	h.sys.Profiles = func() []profiles.Profile {
+		return []profiles.Profile{{Name: "office", Target: "root@192.0.2.9", Identity: "/keys/office", Port: "2222", Note: "second floor"}}
+	}
+	h.sys.Recent = func() []string { return []string{"root@192.0.2.9", "root@192.0.2.50"} }
+	h.start()
+	h.mustContain("office")
+	h.mustContain("saved router: root@192.0.2.9")
+	if strings.Count(h.view(), "root@192.0.2.9") != 1 {
+		t.Errorf("a saved router must not be listed again as 'last used':\n%s", h.view())
+	}
+	if len(h.dials) != 0 {
+		t.Fatal("dialled before enter")
+	}
+	h.key("enter") // the first entry is the saved router
+	if len(h.dials) == 0 || h.dials[0].target != "root@192.0.2.9" {
+		t.Fatalf("dials: %+v", h.dials)
+	}
+	got := strings.Join(h.dials[0].extra, " ")
+	if !strings.Contains(got, "-p 2222") || !strings.Contains(got, "-i /keys/office") {
+		t.Errorf("profile port/key not used: %q", got)
 	}
 }

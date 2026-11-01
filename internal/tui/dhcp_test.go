@@ -208,12 +208,12 @@ config dhcp 'lan'
 	option leasetime '12h'
 
 config host
-	option ip '192.168.10.212'
+	option ip '192.168.50.212'
 	list mac '64:82:14:47:41:0F'
 
 config host
 	option name 'Z2473'
-	option ip '192.168.10.235'
+	option ip '192.168.50.235'
 	list mac '5E:18:91:07:E1:D2'
 `
 

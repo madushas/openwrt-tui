@@ -98,9 +98,9 @@ const realNetwork = `package network
 config interface 'lan'
 	option device 'br-lan'
 	option proto 'static'
-	option ipaddr '192.168.10.1/24'
+	option ipaddr '192.168.50.1/24'
 
-config interface 'eduvpn'
+config interface 'vpn'
 	option proto 'static'
 	option ipaddr '10.0.0.2'
 	option netmask '255.255.255.0'
@@ -123,11 +123,11 @@ func TestNetworkRealShapes(t *testing.T) {
 	n.cfg = cfgs[0]
 	selectIf(t, n, "lan")
 	press(t, a, "enter")
-	if len(n.form.fields) != 4 || n.form.fields[0].Validate("192.168.10.1/24") != nil {
+	if len(n.form.fields) != 4 || n.form.fields[0].Validate("192.168.50.1/24") != nil {
 		t.Fatalf("CIDR form wrong: %d fields", len(n.form.fields))
 	}
 	n.form = nil
-	selectIf(t, n, "eduvpn")
+	selectIf(t, n, "vpn")
 	press(t, a, "enter")
 	n.form.fields[3].Value = "9.9.9.9" // replaces a two-entry list
 	press(t, a, "s")

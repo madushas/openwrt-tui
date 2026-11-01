@@ -18,12 +18,12 @@ config interface 'lan'
 
 config interface 'iot'
 	option proto 'static'
-	option ipaddr '192.168.30.1/24'
+	option ipaddr '192.168.60.1/24'
 
 config route
 	option interface 'iot'
 	option target '10.9.0.0/16'
-	option gateway '192.168.30.254'
+	option gateway '192.168.60.254'
 
 package dhcp
 
@@ -102,7 +102,7 @@ func TestNewInterfaceRefusals(t *testing.T) {
 		"exists":   func(i *Interface) { i.Name = "lan" },
 		"proto":    func(i *Interface) { i.Proto = "l2tp" },
 		"overlap":  func(i *Interface) { i.Address = "192.168.1.5/24" },
-		"overlap2": func(i *Interface) { i.Address = "192.168.30.9/25" },
+		"overlap2": func(i *Interface) { i.Address = "192.168.60.9/25" },
 		"cidr":     func(i *Interface) { i.Address = "192.168.50.1" },
 		"tiny":     func(i *Interface) { i.Address = "192.168.50.1/31" },
 		"gateway":  func(i *Interface) { i.Gateway = "10.0.0.1" },

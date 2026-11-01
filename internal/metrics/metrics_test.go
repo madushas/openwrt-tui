@@ -232,7 +232,7 @@ func TestParseRealRouterSample(t *testing.T) {
 	if wan.Name != "wan" || wan.Device != "wan" || wan.Gateway != "192.168.1.1" || len(wan.Addrs) != 1 || wan.Addrs[0] != "192.168.1.2/24" {
 		t.Fatalf("default-route interface: %+v", wan)
 	}
-	if !names["eduvpn"].Up || names["eduvpn"].Proto != "wireguard" || names["wan6"].Up || names["lan"].Device != "br-lan" {
+	if !names["vpn"].Up || names["vpn"].Proto != "wireguard" || names["wan6"].Up || names["lan"].Device != "br-lan" {
 		t.Fatalf("interfaces: %+v", names)
 	}
 	if len(s.Leases) != 5 || s.Leases[1].Host != "" {

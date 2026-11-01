@@ -111,11 +111,52 @@ func TestNoiseIgnored(t *testing.T) {
 }
 
 func TestRealDropbearPubkeyLine(t *testing.T) {
-	m := "Pubkey auth succeeded for 'root' with ssh-ed25519 key SHA256:abc123 from 192.168.10.199:39836"
+	m := "Pubkey auth succeeded for 'root' with ssh-ed25519 key SHA256:abc123 from 192.168.50.199:39836"
 	if !reOK.MatchString(m) {
 		t.Fatalf("real 25.12 dropbear line not matched: %q", m)
 	}
 	if !reOK.MatchString("Password auth succeeded for 'root' from 10.0.0.2:5555") {
 		t.Fatal("password form regressed")
+	}
+}
+
+func TestCollapseMergesRepeatsButKeepsReconnectPatternVisible(t *testing.T) {
+	mk := func(k Kind, subj, detail string) Event { return Event{Kind: k, Subject: subj, Detail: detail} }
+	in := []Event{ // newest first
+		mk(SSHOK, "root", "from 192.168.50.199"),
+		mk(WifiJoin, "aa", "on phy0-ap0"),
+		mk(SSHOK, "root", "from 192.168.50.199"),
+		mk(WifiLeave, "aa", "on phy0-ap0"),
+		mk(WifiJoin, "aa", "on phy0-ap0"),
+		mk(WifiJoin, "aa", "on phy0-ap0"), // duplicate directly after: merged
+		mk(SSHOK, "root", "from 192.168.50.199"),
+	}
+	out := Collapse(in)
+	if len(out) != 4 {
+		t.Fatalf("got %d entries: %+v", len(out), out)
+	}
+	if out[0].Kind != SSHOK || out[0].Count != 3 {
+		t.Errorf("logins not merged into the newest: %+v", out[0])
+	}
+	if !strings.Contains(out[0].Label(), "(x3)") {
+		t.Errorf("label lacks the count: %q", out[0].Label())
+	}
+	if out[1].Kind != WifiJoin || out[2].Kind != WifiLeave || out[3].Kind != WifiJoin || out[3].Count != 2 {
+		t.Errorf("reconnect pattern lost: %+v", out)
+	}
+	if len(Collapse(nil)) != 0 || in[0].Count != 0 {
+		t.Error("input mutated or nil mishandled")
+	}
+}
+
+func TestFlappingCountsJoinsPerDevice(t *testing.T) {
+	var in []Event
+	for i := 0; i < 6; i++ {
+		in = append(in, Event{Kind: WifiJoin, Subject: "aa:bb", Name: "phone"}, Event{Kind: WifiLeave, Subject: "aa:bb"})
+	}
+	in = append(in, Event{Kind: WifiJoin, Subject: "cc:dd"})
+	f := Flapping(in, 5)
+	if f["phone"] != 6 || len(f) != 1 {
+		t.Fatalf("%v", f)
 	}
 }

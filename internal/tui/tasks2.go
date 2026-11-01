@@ -229,7 +229,7 @@ func (t *tasksScreen) openMore(key string) bool {
 	case "crontpl":
 		t.form = newForm("Cron template",
 			&field{Label: "Template", Key: "tpl", Kind: kChoice, Choices: cronTemplates, Value: cronTemplates[0]},
-			&field{Label: "Interface or service", Key: "name", Hint: "interface (sim, wan, eduvpn) or init script (adblock, dnsmasq)"},
+			&field{Label: "Interface or service", Key: "name", Hint: "interface (sim, wan, vpn) or init script (adblock, dnsmasq)"},
 			&field{Label: "Ping target", Key: "target", Value: "1.1.1.1", Hint: "only for 'Reconnect'"},
 			&field{Label: "Every N minutes", Key: "every", Value: "5", Validate: validate.IntRange(2, 59), Hint: "for the watchdog templates"},
 			&field{Label: "Daily at (HH:MM)", Key: "at", Value: "04:30", Validate: validHHMM, Hint: "for the daily templates"},

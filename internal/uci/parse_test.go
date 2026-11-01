@@ -71,3 +71,15 @@ func TestParseErrors(t *testing.T) {
 		}
 	}
 }
+
+// UCI single-quoted values are literal: backslashes are kept as written.
+func TestBackslashesInValuesAreLiteral(t *testing.T) {
+	c, err := ParseExport("package wireless\nconfig wifi-iface 'w'\n\toption ssid 'C:\\\\Test\\Net.exe'\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, _ := c[0].Sections[0].Option("ssid")
+	if got := o.Value(); got != `C:\\Test\Net.exe` {
+		t.Fatalf("got %q", got)
+	}
+}

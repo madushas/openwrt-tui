@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -68,9 +69,9 @@ func (s *eventsScreen) load() tea.Cmd {
 
 func (s *eventsScreen) shown() []events.Event {
 	if s.group == 0 {
-		return s.all
+		return events.Collapse(s.all)
 	}
-	return events.Filter(s.all, events.Groups[s.group-1])
+	return events.Collapse(events.Filter(s.all, events.Groups[s.group-1]))
 }
 
 func (s *eventsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
@@ -115,6 +116,17 @@ func (s *eventsScreen) View(w, h int) string {
 		}
 		b.WriteString(sBad.Render("  repeated failed SSH logins from "+strings.Join(ips, ", ")) + "\n")
 		h--
+	}
+	if fl := events.Flapping(s.all, 5); len(fl) > 0 {
+		var who []string
+		for n, c := range fl {
+			who = append(who, fmt.Sprintf("%s (%d)", n, c))
+		}
+		sort.Strings(who)
+		for _, l := range wrap("Reconnecting often: "+strings.Join(who, ", ")+". Usually weak signal, the device's Wi-Fi power saving, or interference; check its signal on the Clients screen.", w-4) {
+			b.WriteString(sWarn.Render("  "+l) + "\n")
+			h--
+		}
 	}
 	b.WriteString(sDim.Render(head) + "\n")
 	if len(list) == 0 {

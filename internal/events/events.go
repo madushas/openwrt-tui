@@ -4,6 +4,7 @@
 package events
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -58,10 +59,19 @@ type Event struct {
 	Subject string // MAC, interface, user or command
 	Name    string // friendly name for a MAC, when known
 	Detail  string
+	Count   int // how many identical events this entry stands for (0 or 1 = one)
 }
 
-// Label is a short human description.
+// Label is a short human description, with " xN" when events were merged.
 func (e Event) Label() string {
+	l := e.label()
+	if e.Count > 1 {
+		l += fmt.Sprintf(" (x%d)", e.Count)
+	}
+	return l
+}
+
+func (e Event) label() string {
 	who := e.Subject
 	if e.Name != "" {
 		who = e.Name
@@ -230,6 +240,59 @@ func BruteForce(in []Event, n int) map[string]int {
 	for _, e := range in {
 		if e.Kind == SSHFail {
 			c[strings.TrimPrefix(e.Detail, "from ")]++
+		}
+	}
+	for k, v := range c {
+		if v < n {
+			delete(c, k)
+		}
+	}
+	return c
+}
+
+// Collapse merges repeats so a noisy log stays readable. The input is newest
+// first. Logins, DHCP leases and cron runs with the same subject and detail are
+// merged into the newest one wherever they occur; Wi-Fi joins and leaves are
+// merged only when they follow each other directly, so a reconnect pattern
+// stays visible.
+func Collapse(in []Event) []Event {
+	merge := func(k Kind) bool {
+		return k == SSHOK || k == SSHFail || k == DHCP || k == Cron
+	}
+	var out []Event
+	idx := map[string]int{}
+	for _, e := range in {
+		if e.Count < 1 {
+			e.Count = 1
+		}
+		if merge(e.Kind) {
+			key := string(e.Kind) + "\x00" + e.Subject + "\x00" + e.Detail
+			if i, ok := idx[key]; ok {
+				out[i].Count += e.Count
+				continue
+			}
+			idx[key] = len(out)
+		} else if n := len(out); n > 0 && out[n-1].Kind == e.Kind && out[n-1].Subject == e.Subject && out[n-1].Detail == e.Detail {
+			out[n-1].Count += e.Count
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// Flapping counts Wi-Fi joins per device and returns the ones with at least n,
+// keyed by the friendly name (or MAC). Many joins in a short log usually mean
+// weak signal, aggressive power saving on the device, or interference.
+func Flapping(in []Event, n int) map[string]int {
+	c := map[string]int{}
+	for _, e := range in {
+		if e.Kind == WifiJoin {
+			who := e.Subject
+			if e.Name != "" {
+				who = e.Name
+			}
+			c[who] += max(e.Count, 1)
 		}
 	}
 	for k, v := range c {
